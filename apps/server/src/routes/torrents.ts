@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
 import { extname } from "node:path";
 import { searchTorrents } from "../services/yts.js";
 import {
@@ -6,7 +7,11 @@ import {
   getStatus,
   getVideoFile,
   removeTorrent,
+  listActiveTorrents,
+  setMeta,
+  getMeta,
 } from "../services/torrent.js";
+import { appendHistory } from "../services/history.js";
 
 function extToMime(name: string): string {
   const ext = extname(name).toLowerCase();
@@ -64,13 +69,28 @@ export async function torrentRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post<{ Body: { magnet?: string } }>("/api/torrent/start", async (req, reply) => {
+  app.post<{
+    Body: {
+      magnet?: string;
+      title?: string;
+      posterUrl?: string | null;
+      tmdbId?: number | null;
+      resolution?: string | null;
+    };
+  }>("/api/torrent/start", async (req, reply) => {
     const magnet = req.body?.magnet;
     if (!magnet || !magnet.startsWith("magnet:")) {
       return reply.code(400).send({ error: "valid magnet link required" });
     }
     try {
       const session = await startTorrent(magnet);
+      setMeta(session.infoHash, {
+        title: req.body?.title ?? session.name,
+        posterUrl: req.body?.posterUrl ?? null,
+        tmdbId: req.body?.tmdbId ?? null,
+        resolution: req.body?.resolution ?? null,
+        startedAt: new Date().toISOString(),
+      });
       return {
         infoHash: session.infoHash,
         videoName: session.videoName,
@@ -81,6 +101,21 @@ export async function torrentRoutes(app: FastifyInstance) {
       const msg = err instanceof Error ? err.message : "failed to start torrent";
       return reply.code(500).send({ error: msg });
     }
+  });
+
+  app.get("/api/torrents", async () => {
+    const active = await listActiveTorrents();
+    return {
+      torrents: active.map((t) => {
+        const m = getMeta(t.infoHash);
+        return {
+          ...t,
+          title: m?.title ?? t.name,
+          posterUrl: m?.posterUrl ?? null,
+          resolution: m?.resolution ?? null,
+        };
+      }),
+    };
   });
 
   app.get<{ Params: { infoHash: string } }>(
@@ -96,6 +131,21 @@ export async function torrentRoutes(app: FastifyInstance) {
     "/api/torrent/:infoHash",
     async (req, reply) => {
       try {
+        const status = await getStatus(req.params.infoHash);
+        const m = getMeta(req.params.infoHash);
+        if (status && m) {
+          await appendHistory({
+            id: randomUUID(),
+            title: m.title,
+            posterUrl: m.posterUrl,
+            tmdbId: m.tmdbId,
+            resolution: m.resolution,
+            videoName: status.name,
+            startedAt: m.startedAt,
+            endedAt: new Date().toISOString(),
+            completed: status.done,
+          });
+        }
         await removeTorrent(req.params.infoHash);
         return reply.code(204).send();
       } catch (err) {

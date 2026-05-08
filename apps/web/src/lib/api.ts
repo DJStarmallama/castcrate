@@ -47,6 +47,31 @@ export interface TorrentStatus {
   videoLength: number;
 }
 
+export interface ActiveTorrent extends TorrentStatus {
+  title: string;
+  posterUrl: string | null;
+  resolution: string | null;
+}
+
+export interface HistoryEntry {
+  id: string;
+  title: string;
+  posterUrl: string | null;
+  tmdbId: number | null;
+  resolution: string | null;
+  videoName: string;
+  startedAt: string;
+  endedAt: string;
+  completed: boolean;
+}
+
+export interface SystemCheck {
+  ok: boolean;
+  tmdbConfigured: boolean;
+  downloadPath: string;
+  bufferPercent: number;
+}
+
 export const api = {
   searchMovies: (q: string) =>
     request<{ results: MovieSearchResult[] }>(
@@ -59,12 +84,22 @@ export const api = {
     if (year) url.searchParams.set("year", String(year));
     return request<{ results: TorrentResult[] }>(url.pathname + url.search);
   },
-  startTorrent: (magnet: string) =>
+  startTorrent: (params: {
+    magnet: string;
+    title?: string;
+    posterUrl?: string | null;
+    tmdbId?: number | null;
+    resolution?: string | null;
+  }) =>
     request<StartTorrentResult>("/api/torrent/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ magnet }),
+      body: JSON.stringify(params),
     }),
+  listTorrents: () => request<{ torrents: ActiveTorrent[] }>("/api/torrents"),
+  history: () => request<{ entries: HistoryEntry[] }>("/api/history"),
+  clearHistory: () => request<void>("/api/history", { method: "DELETE" }),
+  systemCheck: () => request<SystemCheck>("/api/system/check"),
   torrentStatus: (infoHash: string) =>
     request<TorrentStatus>(`/api/torrent/${infoHash}`),
   removeTorrent: (infoHash: string) =>

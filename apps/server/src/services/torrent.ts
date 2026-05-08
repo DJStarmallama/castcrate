@@ -69,7 +69,23 @@ export interface TorrentSession {
   videoLength: number;
 }
 
-const ready = new Map<string, Promise<TorrentSession>>();
+export interface TorrentMeta {
+  title: string;
+  posterUrl: string | null;
+  tmdbId: number | null;
+  resolution: string | null;
+  startedAt: string;
+}
+
+const meta = new Map<string, TorrentMeta>();
+
+export function setMeta(infoHash: string, m: TorrentMeta): void {
+  meta.set(infoHash, m);
+}
+
+export function getMeta(infoHash: string): TorrentMeta | undefined {
+  return meta.get(infoHash);
+}
 
 export async function startTorrent(magnet: string): Promise<TorrentSession> {
   const client = await getClient();
@@ -102,7 +118,6 @@ export async function startTorrent(magnet: string): Promise<TorrentSession> {
           reject(new Error("No video file found in torrent"));
           return;
         }
-        // Deselect everything else, prioritize the video file
         for (const f of torrent.files) f.deselect();
         file.select(1);
         clearTimeout(timeout);
@@ -112,7 +127,6 @@ export async function startTorrent(magnet: string): Promise<TorrentSession> {
           videoName: file.name,
           videoLength: file.length,
         };
-        ready.set(torrent.infoHash, Promise.resolve(session));
         resolve(session);
       };
       if (torrent.ready) finalize();
@@ -123,6 +137,24 @@ export async function startTorrent(magnet: string): Promise<TorrentSession> {
       });
     });
   });
+}
+
+export async function listActiveTorrents(): Promise<TorrentStatus[]> {
+  const client = await getClient();
+  const result: TorrentStatus[] = [];
+  for (const t of client.torrents) {
+    const f = pickVideoFile(t.files);
+    result.push({
+      infoHash: t.infoHash,
+      name: t.name,
+      progress: t.progress,
+      downloadSpeed: t.downloadSpeed,
+      numPeers: t.numPeers,
+      done: t.done,
+      videoLength: f?.length ?? 0,
+    });
+  }
+  return result;
 }
 
 export async function getTorrent(infoHash: string): Promise<WtTorrent | null> {
@@ -164,6 +196,7 @@ export async function getStatus(infoHash: string): Promise<TorrentStatus | null>
 
 export async function removeTorrent(infoHash: string): Promise<void> {
   const client = await getClient();
+  meta.delete(infoHash);
   return new Promise((resolve, reject) => {
     client.remove(infoHash, (err) => (err ? reject(err) : resolve()));
   });

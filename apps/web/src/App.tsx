@@ -6,6 +6,8 @@ import { ResultsGrid } from "./components/ResultsGrid";
 import { MovieDetail } from "./components/MovieDetail";
 import { TorrentPicker } from "./components/TorrentPicker";
 import { Player } from "./components/Player";
+import { Library } from "./components/Library";
+import { Settings } from "./components/Settings";
 import { useDebounced } from "./hooks/useDebounced";
 import { api, ApiError, type StartTorrentResult } from "./lib/api";
 
@@ -15,6 +17,8 @@ export default function App() {
   const [findFor, setFindFor] = useState<MovieDetails | null>(null);
   const [session, setSession] = useState<StartTorrentResult | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const debounced = useDebounced(query, 300);
 
   const search = useQuery({
@@ -24,10 +28,17 @@ export default function App() {
   });
 
   const start = useMutation({
-    mutationFn: (t: TorrentResult) => api.startTorrent(t.magnet),
+    mutationFn: (t: TorrentResult) =>
+      api.startTorrent({
+        magnet: t.magnet,
+        title: findFor?.title,
+        posterUrl: findFor?.poster ?? null,
+        tmdbId: findFor?.tmdbId ?? null,
+        resolution: t.resolution,
+      }),
     onSuccess: (data) => {
       setSession(data);
-      setFindFor(null);
+      setFindFor((prev) => prev);
       setStartError(null);
     },
     onError: (err: Error) => {
@@ -38,10 +49,25 @@ export default function App() {
   const showHero = !debounced.trim();
 
   return (
-    <main className="mx-auto flex min-h-full max-w-7xl flex-col px-6 py-10">
+    <main className="mx-auto flex min-h-full max-w-7xl flex-col px-6 py-6">
+      <nav className="flex items-center justify-end gap-2">
+        <button
+          onClick={() => setShowLibrary(true)}
+          className="rounded-full px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+        >
+          Library
+        </button>
+        <button
+          onClick={() => setShowSettings(true)}
+          className="rounded-full px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+        >
+          Settings
+        </button>
+      </nav>
+
       <header
         className={`flex flex-col items-center transition-all ${
-          showHero ? "mt-32" : "mt-2"
+          showHero ? "mt-24" : "mt-2"
         }`}
       >
         <h1
@@ -121,6 +147,9 @@ export default function App() {
           }}
         />
       )}
+
+      {showLibrary && <Library onClose={() => setShowLibrary(false)} />}
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
     </main>
   );
 }
