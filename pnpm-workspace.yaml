@@ -5,5 +5,6 @@ allowBuilds:
   bufferutil: true
   esbuild: true
   node-datachannel: true
+  protobufjs: true
   utf-8-validate: true
   utp-native: true

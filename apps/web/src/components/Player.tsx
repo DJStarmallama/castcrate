@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type { MovieDetails } from "@castcrate/shared";
 import { api, type StartTorrentResult } from "../lib/api";
 import { formatBitsPerSec, formatPercent } from "../lib/format";
+import { CastBar } from "./CastBar";
 
 interface Props {
   movie: MovieDetails;
@@ -11,19 +12,19 @@ interface Props {
 }
 
 export function Player({ movie, session, onClose }: Props) {
-  const [removed, setRemoved] = useState(false);
+  const [castSessionId, setCastSessionId] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
 
   const status = useQuery({
     queryKey: ["torrent-status", session.infoHash],
     queryFn: () => api.torrentStatus(session.infoHash),
     refetchInterval: 1500,
-    enabled: !removed,
+    enabled: !closing,
   });
 
   useEffect(() => {
     return () => {
-      // best-effort cleanup
-      if (!removed) {
+      if (!closing) {
         api.removeTorrent(session.infoHash).catch(() => {});
       }
     };
@@ -31,22 +32,37 @@ export function Player({ movie, session, onClose }: Props) {
   }, []);
 
   const handleClose = async () => {
-    setRemoved(true);
+    setClosing(true);
     try {
-      await api.removeTorrent(session.infoHash);
-    } catch {
-      /* ignore */
+      if (castSessionId) {
+        await api.castControl(castSessionId, "stop").catch(() => {});
+      }
+      await api.removeTorrent(session.infoHash).catch(() => {});
+    } finally {
+      onClose();
     }
-    onClose();
   };
+
+  const isCasting = castSessionId !== null;
+  const contentType = session.videoName.toLowerCase().endsWith(".mkv")
+    ? "video/x-matroska"
+    : "video/mp4";
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black">
-      <header className="flex items-center justify-between border-b border-zinc-900 bg-zinc-950 px-6 py-3">
-        <div className="min-w-0">
+      <header className="flex items-center justify-between gap-4 border-b border-zinc-900 bg-zinc-950 px-6 py-3">
+        <div className="min-w-0 flex-1">
           <h2 className="truncate font-medium">{movie.title}</h2>
           <p className="truncate text-xs text-zinc-500">{session.videoName}</p>
         </div>
+        <CastBar
+          streamPath={session.streamUrl}
+          title={movie.title}
+          posterUrl={movie.poster}
+          contentType={contentType}
+          sessionId={castSessionId}
+          onSessionChange={setCastSessionId}
+        />
         <button
           onClick={handleClose}
           className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
@@ -55,12 +71,20 @@ export function Player({ movie, session, onClose }: Props) {
         </button>
       </header>
       <div className="flex flex-1 items-center justify-center bg-black">
-        <video
-          src={session.streamUrl}
-          controls
-          autoPlay
-          className="h-full max-h-full w-full max-w-full"
-        />
+        {isCasting ? (
+          <CastingPanel
+            movie={movie}
+            sessionId={castSessionId}
+            onStop={() => setCastSessionId(null)}
+          />
+        ) : (
+          <video
+            src={session.streamUrl}
+            controls
+            autoPlay
+            className="h-full max-h-full w-full max-w-full"
+          />
+        )}
       </div>
       <footer className="border-t border-zinc-900 bg-zinc-950 px-6 py-3">
         {status.data ? (
@@ -102,6 +126,60 @@ function ProgressBar({
           className={`h-full ${done ? "bg-emerald-500" : "bg-emerald-400"}`}
           style={{ width: `${Math.max(2, progress * 100)}%` }}
         />
+      </div>
+    </div>
+  );
+}
+
+function CastingPanel({
+  movie,
+  sessionId,
+  onStop,
+}: {
+  movie: MovieDetails;
+  sessionId: string;
+  onStop: () => void;
+}) {
+  const playPause = useMutation({
+    mutationFn: (action: "play" | "pause") => api.castControl(sessionId, action),
+  });
+  const stop = useMutation({
+    mutationFn: () => api.castControl(sessionId, "stop"),
+    onSuccess: onStop,
+  });
+  const [isPaused, setIsPaused] = useState(false);
+
+  return (
+    <div className="flex max-w-xl flex-col items-center gap-6 p-12 text-center">
+      {movie.poster && (
+        <img
+          src={movie.poster}
+          alt={movie.title}
+          className="h-64 rounded-lg shadow-2xl"
+        />
+      )}
+      <div>
+        <h3 className="text-2xl font-semibold">{movie.title}</h3>
+        <p className="mt-2 text-zinc-400">Casting to Chromecast</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => {
+            const next = isPaused ? "play" : "pause";
+            playPause.mutate(next, {
+              onSuccess: () => setIsPaused(!isPaused),
+            });
+          }}
+          className="rounded-full bg-zinc-800 px-6 py-3 hover:bg-zinc-700"
+        >
+          {isPaused ? "Play" : "Pause"}
+        </button>
+        <button
+          onClick={() => stop.mutate()}
+          className="rounded-full bg-red-500 px-6 py-3 text-black hover:bg-red-400"
+        >
+          Stop cast
+        </button>
       </div>
     </div>
   );

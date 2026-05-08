@@ -1,4 +1,10 @@
-import type { MovieDetails, MovieSearchResult, TorrentResult } from "@castcrate/shared";
+import type {
+  CastAction,
+  CastDevice,
+  MovieDetails,
+  MovieSearchResult,
+  TorrentResult,
+} from "@castcrate/shared";
 
 class ApiError extends Error {
   status: number;
@@ -63,6 +69,25 @@ export const api = {
     request<TorrentStatus>(`/api/torrent/${infoHash}`),
   removeTorrent: (infoHash: string) =>
     request<void>(`/api/torrent/${infoHash}`, { method: "DELETE" }),
+  castDevices: () => request<{ devices: CastDevice[] }>("/api/cast/devices"),
+  castPlay: (body: {
+    deviceId: string;
+    streamPath: string;
+    title: string;
+    posterUrl?: string;
+    contentType?: string;
+  }) =>
+    request<{ sessionId: string; streamUrl: string }>("/api/cast/play", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  castControl: (sessionId: string, action: CastAction, value?: number) =>
+    request<{ ok: true }>("/api/cast/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, action, value }),
+    }),
 };
 
 export { ApiError };
