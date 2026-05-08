@@ -1,21 +1,38 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { MovieSearchResult } from "@castcrate/shared";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { MovieDetails, MovieSearchResult, TorrentResult } from "@castcrate/shared";
 import { SearchBar } from "./components/SearchBar";
 import { ResultsGrid } from "./components/ResultsGrid";
 import { MovieDetail } from "./components/MovieDetail";
+import { TorrentPicker } from "./components/TorrentPicker";
+import { Player } from "./components/Player";
 import { useDebounced } from "./hooks/useDebounced";
-import { api, ApiError } from "./lib/api";
+import { api, ApiError, type StartTorrentResult } from "./lib/api";
 
 export default function App() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [findFor, setFindFor] = useState<MovieDetails | null>(null);
+  const [session, setSession] = useState<StartTorrentResult | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
   const debounced = useDebounced(query, 300);
 
   const search = useQuery({
     queryKey: ["search", debounced],
     queryFn: () => api.searchMovies(debounced),
     enabled: debounced.trim().length > 0,
+  });
+
+  const start = useMutation({
+    mutationFn: (t: TorrentResult) => api.startTorrent(t.magnet),
+    onSuccess: (data) => {
+      setSession(data);
+      setFindFor(null);
+      setStartError(null);
+    },
+    onError: (err: Error) => {
+      setStartError(err.message);
+    },
   });
 
   const showHero = !debounced.trim();
@@ -37,15 +54,13 @@ export default function App() {
         {showHero && (
           <p className="mt-3 text-lg text-zinc-400">Search. Find. Cast.</p>
         )}
-        <div className="mt-8 w-full flex justify-center">
+        <div className="mt-8 flex w-full justify-center">
           <SearchBar value={query} onChange={setQuery} />
         </div>
       </header>
 
       <section className="mt-12">
-        {search.isError && (
-          <SearchError err={search.error} />
-        )}
+        {search.isError && <SearchError err={search.error} />}
         {search.isPending && debounced.trim() && (
           <div className="text-center text-zinc-500">Searching…</div>
         )}
@@ -62,17 +77,75 @@ export default function App() {
         )}
       </section>
 
-      {selectedId !== null && (
+      {selectedId !== null && !findFor && !session && (
         <MovieDetail
           tmdbId={selectedId}
           onClose={() => setSelectedId(null)}
-          onFindAndCast={() => {
-            // Phase 2 will wire this up
+          onFindAndCast={(movie) => {
+            setFindFor(movie);
+            setSelectedId(null);
           }}
-          findCastEnabled={false}
+          findCastEnabled
+        />
+      )}
+
+      {findFor && !session && (
+        <TorrentPicker
+          movie={findFor}
+          onClose={() => {
+            setFindFor(null);
+            setStartError(null);
+          }}
+          onPick={(t) => start.mutate(t)}
+        />
+      )}
+
+      {findFor && start.isPending && (
+        <BlockingNotice text={`Connecting to peers for ${findFor.title}…`} />
+      )}
+
+      {startError && (
+        <BlockingNotice
+          text={`Failed to start torrent: ${startError}`}
+          onDismiss={() => setStartError(null)}
+        />
+      )}
+
+      {session && findFor && (
+        <Player
+          movie={findFor}
+          session={session}
+          onClose={() => {
+            setSession(null);
+            setFindFor(null);
+          }}
         />
       )}
     </main>
+  );
+}
+
+function BlockingNotice({
+  text,
+  onDismiss,
+}: {
+  text: string;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-8 py-6 text-center">
+        <p className="text-zinc-200">{text}</p>
+        {onDismiss && (
+          <button
+            onClick={onDismiss}
+            className="mt-4 rounded-full bg-zinc-900 px-4 py-2 text-sm hover:bg-zinc-800"
+          >
+            Dismiss
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

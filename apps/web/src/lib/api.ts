@@ -1,4 +1,4 @@
-import type { MovieDetails, MovieSearchResult } from "@castcrate/shared";
+import type { MovieDetails, MovieSearchResult, TorrentResult } from "@castcrate/shared";
 
 class ApiError extends Error {
   status: number;
@@ -8,8 +8,8 @@ class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, init);
   if (!res.ok) {
     let detail = "";
     try {
@@ -20,13 +20,49 @@ async function get<T>(path: string): Promise<T> {
     }
     throw new ApiError(detail || res.statusText, res.status);
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+export interface StartTorrentResult {
+  infoHash: string;
+  videoName: string;
+  videoLength: number;
+  streamUrl: string;
+}
+
+export interface TorrentStatus {
+  infoHash: string;
+  name: string;
+  progress: number;
+  downloadSpeed: number;
+  numPeers: number;
+  done: boolean;
+  videoLength: number;
 }
 
 export const api = {
   searchMovies: (q: string) =>
-    get<{ results: MovieSearchResult[] }>(`/api/search/movies?q=${encodeURIComponent(q)}`),
-  movieDetails: (tmdbId: number) => get<MovieDetails>(`/api/movies/${tmdbId}`),
+    request<{ results: MovieSearchResult[] }>(
+      `/api/search/movies?q=${encodeURIComponent(q)}`,
+    ),
+  movieDetails: (tmdbId: number) => request<MovieDetails>(`/api/movies/${tmdbId}`),
+  searchTorrents: (title: string, year?: number) => {
+    const url = new URL("/api/search/torrents", window.location.origin);
+    url.searchParams.set("title", title);
+    if (year) url.searchParams.set("year", String(year));
+    return request<{ results: TorrentResult[] }>(url.pathname + url.search);
+  },
+  startTorrent: (magnet: string) =>
+    request<StartTorrentResult>("/api/torrent/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ magnet }),
+    }),
+  torrentStatus: (infoHash: string) =>
+    request<TorrentStatus>(`/api/torrent/${infoHash}`),
+  removeTorrent: (infoHash: string) =>
+    request<void>(`/api/torrent/${infoHash}`, { method: "DELETE" }),
 };
 
 export { ApiError };
