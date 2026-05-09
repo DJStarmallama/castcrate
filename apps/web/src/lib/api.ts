@@ -1,6 +1,7 @@
 import type {
   CastAction,
   CastDevice,
+  CastSessionStatus,
   MovieDetails,
   MovieSearchResult,
   SeriesDetails,
@@ -82,10 +83,12 @@ export interface SystemCheck {
 }
 
 export const api = {
-  search: (q: string) =>
-    request<{ results: MovieSearchResult[] }>(
-      `/api/search?q=${encodeURIComponent(q)}`,
-    ),
+  search: (q: string, type?: "movie" | "series") => {
+    const url = new URL("/api/search", window.location.origin);
+    url.searchParams.set("q", q);
+    if (type) url.searchParams.set("type", type);
+    return request<{ results: MovieSearchResult[] }>(url.pathname + url.search);
+  },
   movieDetails: (imdbId: string) => request<MovieDetails>(`/api/movies/${imdbId}`),
   seriesDetails: (imdbId: string) => request<SeriesDetails>(`/api/series/${imdbId}`),
   seasonEpisodes: (imdbId: string, season: number) =>
@@ -146,6 +149,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId, action, value }),
     }),
+  castSession: (sessionId: string) =>
+    request<CastSessionStatus>(`/api/cast/sessions/${sessionId}`),
 };
 
 export { ApiError };

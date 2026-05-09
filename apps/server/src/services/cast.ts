@@ -55,6 +55,10 @@ interface Session {
   client: CastClient;
   player: DefaultMediaReceiver;
   status: "buffering" | "playing" | "paused" | "stopped";
+  currentTime: number;
+  duration: number;
+  volumeLevel: number;
+  muted: boolean;
 }
 
 const sessions = new Map<string, Session>();
@@ -107,14 +111,33 @@ export async function play(params: PlayParams): Promise<{ sessionId: string }> {
     client,
     player,
     status: "playing",
+    currentTime: 0,
+    duration: 0,
+    volumeLevel: 1,
+    muted: false,
   };
   sessions.set(sessionId, session);
 
   player.on("status", (...args: unknown[]) => {
-    const status = args[0] as { playerState?: string } | undefined;
-    if (status?.playerState === "PLAYING") session.status = "playing";
-    else if (status?.playerState === "PAUSED") session.status = "paused";
-    else if (status?.playerState === "BUFFERING") session.status = "buffering";
+    const status = args[0] as
+      | {
+          playerState?: string;
+          currentTime?: number;
+          media?: { duration?: number };
+          volume?: { level?: number; muted?: boolean };
+        }
+      | undefined;
+    if (!status) return;
+    if (status.playerState === "PLAYING") session.status = "playing";
+    else if (status.playerState === "PAUSED") session.status = "paused";
+    else if (status.playerState === "BUFFERING") session.status = "buffering";
+    if (typeof status.currentTime === "number") session.currentTime = status.currentTime;
+    if (typeof status.media?.duration === "number") session.duration = status.media.duration;
+    if (status.volume) {
+      if (typeof status.volume.level === "number")
+        session.volumeLevel = status.volume.level;
+      if (typeof status.volume.muted === "boolean") session.muted = status.volume.muted;
+    }
   });
 
   player.on("close", () => {
@@ -143,17 +166,35 @@ export async function control(
       sessions.delete(sessionId);
     } else if (action === "seek") s.player.seek(value ?? 0, cb);
     else if (action === "volume") {
-      s.player.setVolume({ level: Math.max(0, Math.min(1, value ?? 0)) }, cb);
+      const level = Math.max(0, Math.min(1, value ?? 0));
+      s.volumeLevel = level;
+      s.player.setVolume({ level }, cb);
+    } else if (action === "mute") {
+      s.muted = true;
+      s.player.setVolume({ muted: true }, cb);
+    } else if (action === "unmute") {
+      s.muted = false;
+      s.player.setVolume({ muted: false }, cb);
     } else {
       reject(new Error(`unknown action: ${action}`));
     }
   });
 }
 
-export function getSession(sessionId: string): { sessionId: string; deviceId: string; status: string } | null {
+import type { CastSessionStatus } from "@castcrate/shared";
+
+export function getSession(sessionId: string): CastSessionStatus | null {
   const s = sessions.get(sessionId);
   if (!s) return null;
-  return { sessionId: s.sessionId, deviceId: s.deviceId, status: s.status };
+  return {
+    sessionId: s.sessionId,
+    deviceId: s.deviceId,
+    status: s.status,
+    currentTime: s.currentTime,
+    duration: s.duration,
+    volumeLevel: s.volumeLevel,
+    muted: s.muted,
+  };
 }
 
 export async function shutdownCast(): Promise<void> {

@@ -192,25 +192,31 @@ function detailToResult(d: OmdbDetailResponse): MovieDetails {
   };
 }
 
-export async function search(query: string): Promise<MovieSearchResult[]> {
+async function safeSearch(query: string, type: "movie" | "series"): Promise<MovieSearchResult[]> {
+  try {
+    const data = await omdbFetch<OmdbSearchResponse>({ s: query, type });
+    return (data.Search ?? []).map(searchItemToResult);
+  } catch (err) {
+    if (err instanceof OmdbError && err.status === 502 && /no.*result/i.test(err.message)) {
+      return [];
+    }
+    throw err;
+  }
+}
+
+export async function search(
+  query: string,
+  type?: "movie" | "series",
+): Promise<MovieSearchResult[]> {
   if (!query.trim()) return [];
-  // OMDb's basic search returns up to 10 results across all types.
-  // Run a movie pass + series pass and merge so series aren't crowded out.
-  const [movieData, seriesData] = await Promise.all([
-    omdbFetch<OmdbSearchResponse>({ s: query, type: "movie" }).catch((err) => {
-      if (err instanceof OmdbError && err.status === 502 && /no.*result/i.test(err.message))
-        return { Response: "False" } as OmdbSearchResponse;
-      throw err;
-    }),
-    omdbFetch<OmdbSearchResponse>({ s: query, type: "series" }).catch((err) => {
-      if (err instanceof OmdbError && err.status === 502 && /no.*result/i.test(err.message))
-        return { Response: "False" } as OmdbSearchResponse;
-      throw err;
-    }),
+  if (type === "movie") return safeSearch(query, "movie");
+  if (type === "series") return safeSearch(query, "series");
+  // Default: run a movie pass + series pass and interleave so neither type
+  // crowds out the other within OMDb's 10-result-per-type cap.
+  const [movies, series] = await Promise.all([
+    safeSearch(query, "movie"),
+    safeSearch(query, "series"),
   ]);
-  const movies = (movieData.Search ?? []).map(searchItemToResult);
-  const series = (seriesData.Search ?? []).map(searchItemToResult);
-  // Interleave but keep movies slightly favored in tied positions
   const out: MovieSearchResult[] = [];
   const max = Math.max(movies.length, series.length);
   for (let i = 0; i < max; i++) {

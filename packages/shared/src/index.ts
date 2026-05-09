@@ -70,4 +70,14 @@ export interface CastSession {
   status: "buffering" | "playing" | "paused" | "stopped";
 }
 
-export type CastAction = "play" | "pause" | "stop" | "seek" | "volume";
+export type CastAction = "play" | "pause" | "stop" | "seek" | "volume" | "mute" | "unmute";
+
+export interface CastSessionStatus {
+  sessionId: string;
+  deviceId: string;
+  status: "buffering" | "playing" | "paused" | "stopped";
+  currentTime: number;
+  duration: number;
+  volumeLevel: number;
+  muted: boolean;
+}

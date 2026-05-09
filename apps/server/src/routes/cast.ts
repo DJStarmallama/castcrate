@@ -11,6 +11,8 @@ const VALID_ACTIONS: ReadonlySet<CastAction> = new Set([
   "stop",
   "seek",
   "volume",
+  "mute",
+  "unmute",
 ]);
 
 interface PlayBody {

@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { MovieDetails } from "@castcrate/shared";
 import { api, type StartTorrentResult } from "../lib/api";
 import { formatBitsPerSec, formatPercent } from "../lib/format";
 import { CastBar } from "./CastBar";
+import { CastControls } from "./CastControls";
 import { useLocalState } from "../hooks/useLocalState";
 import { SMOOTH_PLAYBACK_KEY } from "./Settings";
 
@@ -17,6 +18,10 @@ export function Player({ movie, session, onClose }: Props) {
   const [castSessionId, setCastSessionId] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [smooth] = useLocalState(SMOOTH_PLAYBACK_KEY, false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
   const playUrl = smooth ? `${session.streamUrl}/transcoded` : session.streamUrl;
 
   const status = useQuery({
@@ -26,12 +31,37 @@ export function Player({ movie, session, onClose }: Props) {
     enabled: !closing,
   });
 
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      const target = videoRef.current ?? containerRef.current;
+      target?.requestFullscreen().catch(() => {});
+    }
+  }, []);
+
+  // Track fullscreen state from document
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  // 'F' shortcut toggles fullscreen
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "f" || e.key === "F") {
+        if (!(e.target instanceof HTMLInputElement)) toggleFullscreen();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [toggleFullscreen]);
+
   // Note: torrent removal happens explicitly in handleClose. We don't run
   // a cleanup-on-unmount effect because React StrictMode would fire it on
   // the very first render (mount → unmount → mount), killing the torrent
-  // before it ever gets bytes. If the tab is closed unexpectedly, the user
-  // can clean up from the Library tab.
-
+  // before it ever gets bytes.
   const handleClose = async () => {
     setClosing(true);
     try {
@@ -53,7 +83,7 @@ export function Player({ movie, session, onClose }: Props) {
       : "video/mp4";
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black">
+    <div ref={containerRef} className="fixed inset-0 z-50 flex flex-col bg-black">
       <header className="flex items-center justify-between gap-4 border-b border-zinc-900 bg-zinc-950 px-6 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate font-medium">{movie.title}</h2>
@@ -62,7 +92,7 @@ export function Player({ movie, session, onClose }: Props) {
         {smooth && (
           <span
             className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300"
-            title={`Transcoding to MP4 H.264 capped at ${session.streamUrl ? "5 Mbps" : ""}`}
+            title="Transcoding to MP4 H.264 capped at 5 Mbps"
           >
             Smooth
           </span>
@@ -75,6 +105,16 @@ export function Player({ movie, session, onClose }: Props) {
           sessionId={castSessionId}
           onSessionChange={setCastSessionId}
         />
+        {!isCasting && (
+          <button
+            onClick={toggleFullscreen}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            title={isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
+          >
+            {isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+          </button>
+        )}
         <button
           onClick={handleClose}
           className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
@@ -84,13 +124,15 @@ export function Player({ movie, session, onClose }: Props) {
       </header>
       <div className="flex flex-1 items-center justify-center bg-black">
         {isCasting ? (
-          <CastingPanel
+          <CastControls
             movie={movie}
             sessionId={castSessionId}
             onStop={() => setCastSessionId(null)}
+            disableSeek={smooth}
           />
         ) : (
           <video
+            ref={videoRef}
             src={playUrl}
             controls
             autoPlay
@@ -143,56 +185,17 @@ function ProgressBar({
   );
 }
 
-function CastingPanel({
-  movie,
-  sessionId,
-  onStop,
-}: {
-  movie: MovieDetails;
-  sessionId: string;
-  onStop: () => void;
-}) {
-  const playPause = useMutation({
-    mutationFn: (action: "play" | "pause") => api.castControl(sessionId, action),
-  });
-  const stop = useMutation({
-    mutationFn: () => api.castControl(sessionId, "stop"),
-    onSuccess: onStop,
-  });
-  const [isPaused, setIsPaused] = useState(false);
-
+function FullscreenIcon() {
   return (
-    <div className="flex max-w-xl flex-col items-center gap-6 p-12 text-center">
-      {movie.poster && (
-        <img
-          src={movie.poster}
-          alt={movie.title}
-          className="h-64 rounded-lg shadow-2xl"
-        />
-      )}
-      <div>
-        <h3 className="text-2xl font-semibold">{movie.title}</h3>
-        <p className="mt-2 text-zinc-400">Casting to Chromecast</p>
-      </div>
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => {
-            const next = isPaused ? "play" : "pause";
-            playPause.mutate(next, {
-              onSuccess: () => setIsPaused(!isPaused),
-            });
-          }}
-          className="rounded-full bg-zinc-800 px-6 py-3 hover:bg-zinc-700"
-        >
-          {isPaused ? "Play" : "Pause"}
-        </button>
-        <button
-          onClick={() => stop.mutate()}
-          className="rounded-full bg-red-500 px-6 py-3 text-black hover:bg-red-400"
-        >
-          Stop cast
-        </button>
-      </div>
-    </div>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
+    </svg>
+  );
+}
+function ExitFullscreenIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
+    </svg>
   );
 }

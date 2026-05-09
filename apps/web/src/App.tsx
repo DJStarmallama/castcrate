@@ -44,6 +44,7 @@ export default function App() {
   const [startError, setStartError] = useState<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<"all" | "movie" | "series">("all");
   const searchRef = useRef<HTMLInputElement>(null);
   const debounced = useDebounced(query, 300);
 
@@ -54,8 +55,9 @@ export default function App() {
   });
 
   const search = useQuery({
-    queryKey: ["search", debounced],
-    queryFn: () => api.search(debounced),
+    queryKey: ["search", debounced, typeFilter],
+    queryFn: () =>
+      api.search(debounced, typeFilter === "all" ? undefined : typeFilter),
     // OMDb requires ≥3 chars for meaningful results — anything shorter
     // either errors with "Too many results" or wastes our quota.
     enabled: debounced.trim().length >= 3,
@@ -178,7 +180,24 @@ export default function App() {
         </div>
       </header>
 
-      <section className="mt-12">
+      {debounced.trim().length >= 3 && (
+        <div className="mt-8 flex justify-center gap-2">
+          <FilterPill active={typeFilter === "all"} onClick={() => setTypeFilter("all")}>
+            All
+          </FilterPill>
+          <FilterPill active={typeFilter === "movie"} onClick={() => setTypeFilter("movie")}>
+            Movies
+          </FilterPill>
+          <FilterPill
+            active={typeFilter === "series"}
+            onClick={() => setTypeFilter("series")}
+          >
+            TV
+          </FilterPill>
+        </div>
+      )}
+
+      <section className="mt-8">
         {search.isError && <SearchError err={search.error} />}
         {search.isFetching && debounced.trim().length >= 3 && (
           <div className="text-center text-zinc-500">Searching…</div>
@@ -268,6 +287,29 @@ export default function App() {
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       </main>
     </>
+  );
+}
+
+function FilterPill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-full border px-4 py-1.5 text-sm transition ${
+        active
+          ? "border-amber-300/40 bg-amber-200/15 text-amber-100"
+          : "border-zinc-700 bg-zinc-900/60 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
