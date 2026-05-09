@@ -13,4 +13,7 @@ export const config = {
   omdbApiKey: process.env.OMDB_API_KEY ?? "",
   downloadPath: expandTilde(process.env.DOWNLOAD_PATH ?? "~/Downloads/CastCrate"),
   bufferPercent: Number(process.env.BUFFER_PERCENT ?? 2),
+  transcodeBufferPercent: Number(process.env.TRANSCODE_BUFFER_PERCENT ?? 5),
+  transcodeBitrate: process.env.TRANSCODE_BITRATE ?? "5M",
+  ffmpegPath: process.env.FFMPEG_PATH ?? "ffmpeg",
 };

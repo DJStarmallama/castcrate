@@ -72,6 +72,13 @@ export interface SystemCheck {
   omdbConfigured: boolean;
   downloadPath: string;
   bufferPercent: number;
+  transcodeBufferPercent: number;
+  transcodeBitrate: string;
+  ffmpeg: {
+    available: boolean;
+    version: string | null;
+    path: string;
+  };
 }
 
 export const api = {

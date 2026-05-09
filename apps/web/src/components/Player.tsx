@@ -4,6 +4,8 @@ import type { MovieDetails } from "@castcrate/shared";
 import { api, type StartTorrentResult } from "../lib/api";
 import { formatBitsPerSec, formatPercent } from "../lib/format";
 import { CastBar } from "./CastBar";
+import { useLocalState } from "../hooks/useLocalState";
+import { SMOOTH_PLAYBACK_KEY } from "./Settings";
 
 interface Props {
   movie: MovieDetails;
@@ -14,6 +16,8 @@ interface Props {
 export function Player({ movie, session, onClose }: Props) {
   const [castSessionId, setCastSessionId] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
+  const [smooth] = useLocalState(SMOOTH_PLAYBACK_KEY, false);
+  const playUrl = smooth ? `${session.streamUrl}/transcoded` : session.streamUrl;
 
   const status = useQuery({
     queryKey: ["torrent-status", session.infoHash],
@@ -44,9 +48,12 @@ export function Player({ movie, session, onClose }: Props) {
   };
 
   const isCasting = castSessionId !== null;
-  const contentType = session.videoName.toLowerCase().endsWith(".mkv")
-    ? "video/x-matroska"
-    : "video/mp4";
+  // Transcoded streams are always video/mp4. Native streams keep the source MIME.
+  const contentType = smooth
+    ? "video/mp4"
+    : session.videoName.toLowerCase().endsWith(".mkv")
+      ? "video/x-matroska"
+      : "video/mp4";
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black">
@@ -55,8 +62,16 @@ export function Player({ movie, session, onClose }: Props) {
           <h2 className="truncate font-medium">{movie.title}</h2>
           <p className="truncate text-xs text-zinc-500">{session.videoName}</p>
         </div>
+        {smooth && (
+          <span
+            className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300"
+            title={`Transcoding to MP4 H.264 capped at ${session.streamUrl ? "5 Mbps" : ""}`}
+          >
+            Smooth
+          </span>
+        )}
         <CastBar
-          streamPath={session.streamUrl}
+          streamPath={playUrl}
           title={movie.title}
           posterUrl={movie.poster}
           contentType={contentType}
@@ -79,7 +94,7 @@ export function Player({ movie, session, onClose }: Props) {
           />
         ) : (
           <video
-            src={session.streamUrl}
+            src={playUrl}
             controls
             autoPlay
             className="h-full max-h-full w-full max-w-full"

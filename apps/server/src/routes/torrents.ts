@@ -14,6 +14,7 @@ import {
 } from "../services/torrent.js";
 import { appendHistory } from "../services/history.js";
 import { parseRange } from "../lib/range.js";
+import { spawnTranscode, checkFfmpeg } from "../services/transcoder.js";
 
 function extToMime(name: string): string {
   const ext = extname(name).toLowerCase();
@@ -177,6 +178,64 @@ export async function torrentRoutes(app: FastifyInstance) {
       }
       reply.header("Content-Length", String(size));
       return reply.send(file.createReadStream());
+    },
+  );
+
+  app.get<{ Params: { infoHash: string } }>(
+    "/stream/:infoHash/transcoded",
+    async (req, reply) => {
+      const ff = await checkFfmpeg();
+      if (!ff.available) {
+        return reply.code(503).send({
+          error:
+            "ffmpeg is not installed or not on PATH. Install with `brew install ffmpeg` to enable transcoding.",
+        });
+      }
+      const file = await getVideoFile(req.params.infoHash);
+      if (!file) {
+        return reply.code(404).send({ error: "torrent not found" });
+      }
+
+      const source = file.createReadStream();
+      const handle = spawnTranscode(source);
+
+      let stderrBuf = "";
+      handle.process.stderr.on("data", (chunk: Buffer) => {
+        stderrBuf += chunk.toString();
+        if (stderrBuf.length > 4096) stderrBuf = stderrBuf.slice(-4096);
+      });
+      handle.process.on("error", (err) => {
+        req.log.error({ err }, "ffmpeg spawn error");
+      });
+      handle.process.on("exit", (code) => {
+        if (code !== 0 && code !== null) {
+          req.log.warn(
+            { code, tail: stderrBuf.slice(-512) },
+            "ffmpeg exited non-zero",
+          );
+        }
+      });
+
+      const cleanup = () => {
+        try {
+          source.unpipe?.(handle.process.stdin);
+        } catch {
+          /* ignore */
+        }
+        if (!handle.process.killed) {
+          handle.process.kill("SIGTERM");
+          setTimeout(() => {
+            if (!handle.process.killed) handle.process.kill("SIGKILL");
+          }, 1500).unref();
+        }
+      };
+      req.raw.on("close", cleanup);
+
+      reply.header("Content-Type", "video/mp4");
+      // Transcoded streams are not seekable in v1; range requests are ignored.
+      reply.header("Accept-Ranges", "none");
+      reply.header("Cache-Control", "no-store");
+      return reply.send(handle.stdout);
     },
   );
 }

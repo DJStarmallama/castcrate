@@ -3,13 +3,15 @@ import { config } from "../lib/config.js";
 
 mkdirSync(config.downloadPath, { recursive: true });
 
+import type { Readable } from "node:stream";
+
 interface WtFile {
   name: string;
   length: number;
   done: boolean;
   select(priority?: number): void;
   deselect(): void;
-  createReadStream(opts?: { start?: number; end?: number }): NodeJS.ReadableStream;
+  createReadStream(opts?: { start?: number; end?: number }): Readable;
 }
 
 interface WtTorrent {
