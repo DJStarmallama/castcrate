@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { MovieDetails } from "@castcrate/shared";
 import { api } from "../lib/api";
 import { useEscape } from "../hooks/useEscape";
+import { TrailerView } from "./TrailerView";
 
 interface Props {
   imdbId: string;
@@ -12,6 +14,7 @@ interface Props {
 
 export function MovieDetail({ imdbId, onClose, onFindAndCast, findCastEnabled = false }: Props) {
   useEscape(onClose);
+  const [trailerOn, setTrailerOn] = useState(false);
   const q = useQuery<MovieDetails>({
     queryKey: ["movie", imdbId],
     queryFn: () => api.movieDetails(imdbId),
@@ -28,7 +31,7 @@ export function MovieDetail({ imdbId, onClose, onFindAndCast, findCastEnabled = 
       >
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 rounded-full bg-zinc-900/80 p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+          className="absolute right-4 top-4 z-10 rounded-full bg-zinc-900/80 p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
           aria-label="Close"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -44,7 +47,21 @@ export function MovieDetail({ imdbId, onClose, onFindAndCast, findCastEnabled = 
             Failed to load: {q.error.message}
           </div>
         )}
-        {q.data && <DetailBody movie={q.data} onFindAndCast={onFindAndCast} findCastEnabled={findCastEnabled} />}
+        {q.data && trailerOn && (
+          <TrailerView
+            title={q.data.title}
+            year={q.data.year}
+            onClose={() => setTrailerOn(false)}
+          />
+        )}
+        {q.data && !trailerOn && (
+          <DetailBody
+            movie={q.data}
+            onFindAndCast={onFindAndCast}
+            findCastEnabled={findCastEnabled}
+            onPlayTrailer={() => setTrailerOn(true)}
+          />
+        )}
       </div>
     </div>
   );
@@ -54,10 +71,12 @@ function DetailBody({
   movie,
   onFindAndCast,
   findCastEnabled,
+  onPlayTrailer,
 }: {
   movie: MovieDetails;
   onFindAndCast: (movie: MovieDetails) => void;
   findCastEnabled: boolean;
+  onPlayTrailer: () => void;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-[300px_1fr]">
@@ -100,7 +119,7 @@ function DetailBody({
             </p>
           </div>
         )}
-        <div className="mt-8">
+        <div className="mt-8 flex flex-wrap gap-3">
           <button
             onClick={() => onFindAndCast(movie)}
             disabled={!findCastEnabled}
@@ -108,6 +127,15 @@ function DetailBody({
             title={findCastEnabled ? undefined : "Available in next phase"}
           >
             Find & Cast
+          </button>
+          <button
+            onClick={onPlayTrailer}
+            className="flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-5 py-3 font-medium text-zinc-200 transition hover:border-zinc-600 hover:bg-zinc-800"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            Trailer
           </button>
         </div>
       </div>

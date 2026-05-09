@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { SeriesDetails, SeriesEpisode } from "@castcrate/shared";
 import { api } from "../lib/api";
 import { useEscape } from "../hooks/useEscape";
+import { TrailerView } from "./TrailerView";
 
 interface Props {
   imdbId: string;
@@ -12,6 +13,7 @@ interface Props {
 
 export function SeriesDetail({ imdbId, onClose, onPickEpisode }: Props) {
   useEscape(onClose);
+  const [trailerOn, setTrailerOn] = useState(false);
   const series = useQuery<SeriesDetails>({
     queryKey: ["series", imdbId],
     queryFn: () => api.seriesDetails(imdbId),
@@ -44,7 +46,20 @@ export function SeriesDetail({ imdbId, onClose, onPickEpisode }: Props) {
             Failed to load: {series.error.message}
           </div>
         )}
-        {series.data && <Body series={series.data} onPickEpisode={onPickEpisode} />}
+        {series.data && trailerOn && (
+          <TrailerView
+            title={series.data.title}
+            year={series.data.year}
+            onClose={() => setTrailerOn(false)}
+          />
+        )}
+        {series.data && !trailerOn && (
+          <Body
+            series={series.data}
+            onPickEpisode={onPickEpisode}
+            onPlayTrailer={() => setTrailerOn(true)}
+          />
+        )}
       </div>
     </div>
   );
@@ -53,9 +68,11 @@ export function SeriesDetail({ imdbId, onClose, onPickEpisode }: Props) {
 function Body({
   series,
   onPickEpisode,
+  onPlayTrailer,
 }: {
   series: SeriesDetails;
   onPickEpisode: (series: SeriesDetails, episode: SeriesEpisode) => void;
+  onPlayTrailer: () => void;
 }) {
   const [season, setSeason] = useState(1);
 
@@ -116,6 +133,17 @@ function Body({
               </p>
             </div>
           )}
+          <div className="mt-6">
+            <button
+              onClick={onPlayTrailer}
+              className="flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-5 py-2.5 text-sm font-medium text-zinc-200 transition hover:border-zinc-600 hover:bg-zinc-800"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              Trailer
+            </button>
+          </div>
         </div>
       </div>
 

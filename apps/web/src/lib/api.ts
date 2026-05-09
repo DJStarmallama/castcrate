@@ -198,6 +198,16 @@ export const api = {
     request<CastSessionStatus>(`/api/cast/sessions/${sessionId}`),
   subtitleTracks: (infoHash: string) =>
     request<{ tracks: SubtitleTrack[] }>(`/stream/${infoHash}/subtitles`),
+  trailer: (title: string, year?: number | null) => {
+    const url = new URL("/api/trailer", window.location.origin);
+    url.searchParams.set("title", title);
+    if (year != null) url.searchParams.set("year", String(year));
+    return request<{
+      videoId: string | null;
+      embedUrl: string | null;
+      searchUrl: string;
+    }>(url.pathname + url.search);
+  },
 };
 
 export interface SubtitleTrack {
