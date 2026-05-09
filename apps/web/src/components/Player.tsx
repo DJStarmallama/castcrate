@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type { MovieDetails } from "@castcrate/shared";
 import { api, type StartTorrentResult, type SubtitleTrack } from "../lib/api";
 import { formatBitsPerSec, formatPercent } from "../lib/format";
@@ -38,6 +38,30 @@ export function Player({ movie, session, onClose }: Props) {
     refetchInterval: (q) => (q.state.data?.done ? false : 1500),
     enabled: !closing,
   });
+
+  // Multi-file torrents (season packs etc.): let the user pick which file
+  // is streamed. The server keeps the chosen index in TorrentMeta and the
+  // /stream/:hash endpoint resolves through that.
+  const filesQ = useQuery({
+    queryKey: ["torrent-files", session.infoHash],
+    queryFn: () => api.torrentFiles(session.infoHash),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    enabled: !closing,
+  });
+  const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
+  useEffect(() => {
+    if (selectedFileIndex !== null || !filesQ.data) return;
+    setSelectedFileIndex(
+      filesQ.data.selectedIndex ?? filesQ.data.files[0]?.index ?? null,
+    );
+  }, [filesQ.data, selectedFileIndex]);
+  const selectFile = useMutation({
+    mutationFn: (index: number) => api.selectTorrentFile(session.infoHash, index),
+    onSuccess: (_data, index) => setSelectedFileIndex(index),
+  });
+  const files = filesQ.data?.files ?? [];
+  const showFilePicker = files.length > 1;
 
   // Detect a stalled stream — progress hasn't budged in STALL_THRESHOLD_MS
   // while still downloading. Used in the footer to surface "no peers" UX.
@@ -131,6 +155,21 @@ export function Player({ movie, session, onClose }: Props) {
             {autoTranscode && !smooth ? "Auto" : "Smooth"}
           </span>
         )}
+        {showFilePicker && (
+          <select
+            value={selectedFileIndex ?? ""}
+            onChange={(e) => selectFile.mutate(Number(e.target.value))}
+            disabled={selectFile.isPending}
+            title="Choose which file in this torrent to play"
+            className="max-w-xs truncate rounded-full bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+          >
+            {files.map((f) => (
+              <option key={f.index} value={f.index}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        )}
         <SubtitlePicker
           infoHash={session.infoHash}
           selected={subtitle}
@@ -174,9 +213,10 @@ export function Player({ movie, session, onClose }: Props) {
         ) : (
           <video
             ref={videoRef}
-            // Force a fresh element when the subtitle track changes —
-            // <video> caches text tracks aggressively otherwise.
-            key={subtitle ? `${session.infoHash}-${subtitle.index}` : session.infoHash}
+            // Force a fresh element when the subtitle track or selected
+            // video file changes — <video> caches text tracks aggressively
+            // and won't re-fetch a new src on its own.
+            key={`${session.infoHash}-${selectedFileIndex ?? "auto"}-${subtitle?.index ?? "none"}`}
             src={playUrl}
             controls
             autoPlay

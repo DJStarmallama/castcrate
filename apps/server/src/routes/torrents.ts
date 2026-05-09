@@ -15,6 +15,8 @@ import {
   getVideoFile,
   removeTorrent,
   listActiveTorrents,
+  listVideoFiles,
+  selectVideoFile,
   setMeta,
   getMeta,
 } from "../services/torrent.js";
@@ -227,6 +229,40 @@ export async function torrentRoutes(app: FastifyInstance) {
       return status;
     },
   );
+
+  app.get<{ Params: { infoHash: string } }>(
+    "/api/torrent/:infoHash/files",
+    async (req, reply) => {
+      const files = await listVideoFiles(req.params.infoHash);
+      if (files.length === 0) {
+        return reply.code(404).send({ error: "no video files" });
+      }
+      const m = getMeta(req.params.infoHash);
+      return {
+        files,
+        selectedIndex: m?.selectedFileIndex ?? null,
+      };
+    },
+  );
+
+  app.post<{
+    Params: { infoHash: string };
+    Body: { index?: number };
+  }>("/api/torrent/:infoHash/file", async (req, reply) => {
+    const idx = req.body?.index;
+    if (idx == null || !Number.isInteger(idx) || idx < 0) {
+      return reply.code(400).send({
+        error: "index (non-negative integer) required",
+      });
+    }
+    try {
+      const entry = await selectVideoFile(req.params.infoHash, idx);
+      return { selected: entry };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "select failed";
+      return reply.code(404).send({ error: msg });
+    }
+  });
 
   app.delete<{
     Params: { infoHash: string };

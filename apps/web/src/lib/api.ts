@@ -140,6 +140,20 @@ export const api = {
   systemCheck: () => request<SystemCheck>("/api/system/check"),
   torrentStatus: (infoHash: string) =>
     request<TorrentStatus>(`/api/torrent/${infoHash}`),
+  torrentFiles: (infoHash: string) =>
+    request<{
+      files: { index: number; name: string; length: number }[];
+      selectedIndex: number | null;
+    }>(`/api/torrent/${infoHash}/files`),
+  selectTorrentFile: (infoHash: string, index: number) =>
+    request<{ selected: { index: number; name: string; length: number } }>(
+      `/api/torrent/${infoHash}/file`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index }),
+      },
+    ),
   removeTorrent: (infoHash: string, opts: { destroy?: boolean } = {}) => {
     const url = new URL(`/api/torrent/${infoHash}`, window.location.origin);
     if (opts.destroy) url.searchParams.set("destroy", "1");

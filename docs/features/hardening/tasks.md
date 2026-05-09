@@ -58,7 +58,7 @@ Each item is feature-sized; spawn `/start-feature` when ready.
 
 - [ ] **E1.** WebSocket push for cast + torrent state
 - [x] **E2.** Auto-transcode for HEVC/H.265/AV1 — TorrentMeta tracks `videoCodec`, `StartTorrentResult` returns it, Player auto-routes through `/transcoded` when the source codec isn't Chromecast-friendly. User toggle still wins as override.
-- [ ] **E3.** Manual file picker for multi-file torrents
+- [x] **E3.** Manual file picker — `GET /api/torrent/:hash/files` lists video files; `POST /api/torrent/:hash/file { index }` selects one (deselects others, raises priority on the new pick). Player renders a `<select>` in the header for multi-file torrents and re-keys the `<video>` so the new file streams immediately.
 - [ ] **E4.** Editable settings (PATCH `/api/settings` → `~/.castcrate/settings.json`)
 - [x] **E5.** Knaben season-pack search path — `searchKnabenSeasonPack()` + `seasonPackMatchesTitle()`; wired into `/api/search/torrents/episode` when EZTV pack is empty
 - [x] **E6.** Per-indexer DNS-bypass scoping — substring allowlist (default `yts,eztv,knaben`); other hostnames (mDNS, OMDb, etc.) use the OS resolver. `DNS_BYPASS_HOSTS=*` reverts to legacy global mode.

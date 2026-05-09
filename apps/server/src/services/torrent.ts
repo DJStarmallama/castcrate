@@ -85,6 +85,9 @@ export interface TorrentMeta {
   // Set when a history entry has already been written for this torrent
   // (e.g. on cast start). Removal uses this to update instead of duplicate.
   historyId?: string;
+  // Index into the raw torrent.files array — overrides the
+  // largest-video-file heuristic for season packs and similar.
+  selectedFileIndex?: number;
 }
 
 const meta = new Map<string, TorrentMeta>();
@@ -100,6 +103,11 @@ export function getMeta(infoHash: string): TorrentMeta | undefined {
 export function setMetaHistoryId(infoHash: string, historyId: string): void {
   const m = meta.get(infoHash);
   if (m) m.historyId = historyId;
+}
+
+export function setMetaSelectedFile(infoHash: string, index: number): void {
+  const m = meta.get(infoHash);
+  if (m) m.selectedFileIndex = index;
 }
 
 export async function startTorrent(magnet: string): Promise<TorrentSession> {
@@ -180,10 +188,51 @@ export async function getTorrent(infoHash: string): Promise<WtTorrent | null> {
   return t ?? null;
 }
 
+function resolveVideoFile(t: WtTorrent): WtFile | null {
+  const m = meta.get(t.infoHash);
+  if (m?.selectedFileIndex != null) {
+    const f = t.files[m.selectedFileIndex];
+    if (f && VIDEO_EXT.test(f.name)) return f;
+  }
+  return pickVideoFile(t.files);
+}
+
 export async function getVideoFile(infoHash: string): Promise<WtFile | null> {
   const t = await getTorrent(infoHash);
   if (!t) return null;
-  return pickVideoFile(t.files);
+  return resolveVideoFile(t);
+}
+
+export interface VideoFileEntry {
+  index: number;
+  name: string;
+  length: number;
+}
+
+export async function listVideoFiles(
+  infoHash: string,
+): Promise<VideoFileEntry[]> {
+  const t = await getTorrent(infoHash);
+  if (!t) return [];
+  return t.files
+    .map((f, index) => ({ index, name: f.name, length: f.length }))
+    .filter((e) => VIDEO_EXT.test(e.name));
+}
+
+export async function selectVideoFile(
+  infoHash: string,
+  index: number,
+): Promise<VideoFileEntry> {
+  const t = await getTorrent(infoHash);
+  if (!t) throw new Error("torrent not found");
+  const f = t.files[index];
+  if (!f || !VIDEO_EXT.test(f.name)) throw new Error("invalid file index");
+  // Reprioritise downloads — drop the old selection, prioritise the new one
+  // so its head bytes arrive first for streaming.
+  for (const file of t.files) file.deselect();
+  f.select(1);
+  setMetaSelectedFile(infoHash, index);
+  return { index, name: f.name, length: f.length };
 }
 
 export interface TorrentStatus {
