@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { MovieDetails } from "@castcrate/shared";
 import { api } from "../lib/api";
+import { useEscape } from "../hooks/useEscape";
 
 interface Props {
   tmdbId: number;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function MovieDetail({ tmdbId, onClose, onFindAndCast, findCastEnabled = false }: Props) {
+  useEscape(onClose);
   const q = useQuery<MovieDetails>({
     queryKey: ["movie", tmdbId],
     queryFn: () => api.movieDetails(tmdbId),

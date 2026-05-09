@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { MovieDetails, TorrentResult } from "@castcrate/shared";
 import { api } from "../lib/api";
 import { formatBytes } from "../lib/format";
+import { useEscape } from "../hooks/useEscape";
 
 interface Props {
   movie: MovieDetails;
@@ -12,6 +13,7 @@ interface Props {
 
 export function TorrentPicker({ movie, onClose, onPick }: Props) {
   const [showAll, setShowAll] = useState(false);
+  useEscape(onClose);
 
   const q = useQuery({
     queryKey: ["torrents", movie.title, movie.year],

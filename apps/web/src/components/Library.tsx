@@ -2,12 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ActiveTorrent, HistoryEntry } from "../lib/api";
 import { api } from "../lib/api";
 import { formatBitsPerSec, formatBytes, formatPercent } from "../lib/format";
+import { useEscape } from "../hooks/useEscape";
 
 interface Props {
   onClose: () => void;
 }
 
 export function Library({ onClose }: Props) {
+  useEscape(onClose);
   const qc = useQueryClient();
   const active = useQuery({
     queryKey: ["torrents-active"],

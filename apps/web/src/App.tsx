@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { MovieDetails, MovieSearchResult, TorrentResult } from "@castcrate/shared";
 import { SearchBar } from "./components/SearchBar";
@@ -9,6 +9,7 @@ import { Player } from "./components/Player";
 import { Library } from "./components/Library";
 import { Settings } from "./components/Settings";
 import { useDebounced } from "./hooks/useDebounced";
+import { useGlobalShortcut } from "./hooks/useGlobalShortcut";
 import { api, ApiError, type StartTorrentResult } from "./lib/api";
 
 export default function App() {
@@ -19,7 +20,14 @@ export default function App() {
   const [startError, setStartError] = useState<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
   const debounced = useDebounced(query, 300);
+
+  useGlobalShortcut({ key: "k", meta: true }, (e) => {
+    e.preventDefault();
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  });
 
   const search = useQuery({
     queryKey: ["search", debounced],
@@ -80,7 +88,7 @@ export default function App() {
           <p className="mt-3 text-lg text-zinc-400">Search. Find. Cast.</p>
         )}
         <div className="mt-8 flex w-full justify-center">
-          <SearchBar value={query} onChange={setQuery} />
+          <SearchBar ref={searchRef} value={query} onChange={setQuery} />
         </div>
       </header>
 

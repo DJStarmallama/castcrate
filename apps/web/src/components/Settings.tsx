@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { useEscape } from "../hooks/useEscape";
 
 interface Props {
   onClose: () => void;
 }
 
 export function Settings({ onClose }: Props) {
+  useEscape(onClose);
   const sys = useQuery({
     queryKey: ["system-check"],
     queryFn: () => api.systemCheck(),
