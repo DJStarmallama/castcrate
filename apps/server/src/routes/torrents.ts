@@ -173,6 +173,7 @@ export async function torrentRoutes(app: FastifyInstance) {
       posterUrl?: string | null;
       imdbId?: string | null;
       resolution?: string | null;
+      videoCodec?: string | null;
     };
   }>("/api/torrent/start", async (req, reply) => {
     const magnet = req.body?.magnet;
@@ -181,11 +182,13 @@ export async function torrentRoutes(app: FastifyInstance) {
     }
     try {
       const session = await startTorrent(magnet);
+      const videoCodec = req.body?.videoCodec ?? null;
       setMeta(session.infoHash, {
         title: req.body?.title ?? session.name,
         posterUrl: req.body?.posterUrl ?? null,
         imdbId: req.body?.imdbId ?? null,
         resolution: req.body?.resolution ?? null,
+        videoCodec,
         startedAt: new Date().toISOString(),
       });
       return {
@@ -193,6 +196,7 @@ export async function torrentRoutes(app: FastifyInstance) {
         videoName: session.videoName,
         videoLength: session.videoLength,
         streamUrl: `/stream/${session.infoHash}`,
+        videoCodec,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : "failed to start torrent";

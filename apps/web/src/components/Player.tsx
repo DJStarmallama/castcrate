@@ -24,7 +24,12 @@ export function Player({ movie, session, onClose }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const playUrl = smooth ? `${session.streamUrl}/transcoded` : session.streamUrl;
+  // Auto-transcode for codecs the Default Media Receiver can't play directly
+  // (HEVC, AV1). The user toggle still wins over this — but if they haven't
+  // explicitly opted in, we route HEVC/AV1 through ffmpeg so playback Just Works.
+  const autoTranscode = needsAutoTranscode(session.videoCodec);
+  const useTranscode = smooth || autoTranscode;
+  const playUrl = useTranscode ? `${session.streamUrl}/transcoded` : session.streamUrl;
 
   const status = useQuery({
     queryKey: ["torrent-status", session.infoHash],
@@ -101,7 +106,7 @@ export function Player({ movie, session, onClose }: Props) {
 
   const isCasting = castSessionId !== null;
   // Transcoded streams are always video/mp4. Native streams keep the source MIME.
-  const contentType = smooth
+  const contentType = useTranscode
     ? "video/mp4"
     : session.videoName.toLowerCase().endsWith(".mkv")
       ? "video/x-matroska"
@@ -114,12 +119,16 @@ export function Player({ movie, session, onClose }: Props) {
           <h2 className="truncate font-medium">{movie.title}</h2>
           <p className="truncate text-xs text-zinc-500">{session.videoName}</p>
         </div>
-        {smooth && (
+        {useTranscode && (
           <span
             className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300"
-            title="Transcoding to MP4 H.264 capped at 5 Mbps"
+            title={
+              autoTranscode && !smooth
+                ? `Auto-transcoding because source codec is ${session.videoCodec ?? "unsupported"}`
+                : "Transcoding to MP4 H.264 capped at 5 Mbps"
+            }
           >
-            Smooth
+            {autoTranscode && !smooth ? "Auto" : "Smooth"}
           </span>
         )}
         <SubtitlePicker
@@ -160,7 +169,7 @@ export function Player({ movie, session, onClose }: Props) {
             movie={movie}
             sessionId={castSessionId}
             onStop={() => setCastSessionId(null)}
-            disableSeek={smooth}
+            disableSeek={useTranscode}
           />
         ) : (
           <video
@@ -240,6 +249,14 @@ function ProgressBar({
 }
 
 const STALL_THRESHOLD_MS = 10_000;
+
+// Codecs the Chromecast Default Media Receiver can't play directly. When we
+// detect one, route through the ffmpeg transcoder pipeline by default.
+function needsAutoTranscode(codec: string | null | undefined): boolean {
+  if (!codec) return false;
+  const c = codec.toLowerCase();
+  return c === "x265" || c === "h265" || c === "hevc" || c === "av1";
+}
 
 function FullscreenIcon() {
   return (

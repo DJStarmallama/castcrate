@@ -80,6 +80,7 @@ export interface TorrentMeta {
   posterUrl: string | null;
   imdbId: string | null;
   resolution: string | null;
+  videoCodec: string | null;
   startedAt: string;
   // Set when a history entry has already been written for this torrent
   // (e.g. on cast start). Removal uses this to update instead of duplicate.

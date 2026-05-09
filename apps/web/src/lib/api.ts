@@ -38,6 +38,7 @@ export interface StartTorrentResult {
   videoName: string;
   videoLength: number;
   streamUrl: string;
+  videoCodec: string | null;
 }
 
 export interface TorrentStatus {
@@ -126,6 +127,7 @@ export const api = {
     posterUrl?: string | null;
     imdbId?: string | null;
     resolution?: string | null;
+    videoCodec?: string | null;
   }) =>
     request<StartTorrentResult>("/api/torrent/start", {
       method: "POST",

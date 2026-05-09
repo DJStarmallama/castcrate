@@ -76,6 +76,7 @@ export default function App() {
         posterUrl: params.posterUrl,
         imdbId: params.imdbId,
         resolution: params.torrent.resolution,
+        videoCodec: params.torrent.videoCodec,
       }),
     onSuccess: (data, params) => {
       setSession(data);

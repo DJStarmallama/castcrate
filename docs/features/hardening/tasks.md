@@ -57,7 +57,7 @@
 Each item is feature-sized; spawn `/start-feature` when ready.
 
 - [ ] **E1.** WebSocket push for cast + torrent state
-- [ ] **E2.** Auto-transcode trigger from codec probe (HEVC, AV1, high-bitrate)
+- [x] **E2.** Auto-transcode for HEVC/H.265/AV1 — TorrentMeta tracks `videoCodec`, `StartTorrentResult` returns it, Player auto-routes through `/transcoded` when the source codec isn't Chromecast-friendly. User toggle still wins as override.
 - [ ] **E3.** Manual file picker for multi-file torrents
 - [ ] **E4.** Editable settings (PATCH `/api/settings` → `~/.castcrate/settings.json`)
 - [x] **E5.** Knaben season-pack search path — `searchKnabenSeasonPack()` + `seasonPackMatchesTitle()`; wired into `/api/search/torrents/episode` when EZTV pack is empty
