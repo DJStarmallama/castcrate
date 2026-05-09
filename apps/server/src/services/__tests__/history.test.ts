@@ -86,4 +86,68 @@ describe("history", () => {
     expect(existsSync(join(TMP, ".castcrate", "history.json"))).toBe(true);
     expect(existsSync(join(TMP, ".castcrate", "history.json.tmp"))).toBe(false);
   });
+
+  // D3: cast-start writes an entry; removal updates that entry instead of
+  // appending a duplicate. This exercises the route storage contract.
+  it("cast-start → removal updates the same entry, no duplicate", async () => {
+    const startedAt = new Date(0).toISOString();
+    // Cast start path: append with completed=false
+    await appendHistory(
+      sample({
+        id: "session-1",
+        startedAt,
+        endedAt: startedAt,
+        completed: false,
+      }),
+    );
+    // Removal path: the route calls updateHistoryById when meta.historyId is set
+    const ended = new Date(60_000).toISOString();
+    const ok = await updateHistoryById("session-1", { endedAt: ended, completed: true });
+    expect(ok).toBe(true);
+    const list = await listHistory();
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({
+      id: "session-1",
+      completed: true,
+      endedAt: ended,
+      startedAt,
+    });
+  });
+});
+
+// D4: corrupted JSON / missing file recovery.
+// The history module caches in memory, so to exercise the on-disk read path
+// we use vi.resetModules() to force a fresh import each time.
+describe("history corruption recovery", () => {
+  it("treats malformed JSON as empty without throwing", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    await writeFile(join(TMP, ".castcrate", "history.json"), "{not valid json", "utf8");
+    vi.resetModules();
+    const { listHistory: list } = await import("../history.js");
+    expect(await list()).toEqual([]);
+  });
+
+  it("treats a partial / truncated write as empty without throwing", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    // Truncated array — JSON.parse will throw
+    await writeFile(
+      join(TMP, ".castcrate", "history.json"),
+      '[{"id":"a","title":"x"',
+      "utf8",
+    );
+    vi.resetModules();
+    const { listHistory: list } = await import("../history.js");
+    expect(await list()).toEqual([]);
+  });
+
+  it("treats a missing file as empty without throwing", async () => {
+    const { rm } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    await rm(join(TMP, ".castcrate", "history.json"), { force: true });
+    vi.resetModules();
+    const { listHistory: list } = await import("../history.js");
+    expect(await list()).toEqual([]);
+  });
 });

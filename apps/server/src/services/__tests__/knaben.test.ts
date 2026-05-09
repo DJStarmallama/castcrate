@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { episodeMatchesTitle } from "../knaben.js";
+import { _internals, episodeMatchesTitle } from "../knaben.js";
+
+const baseHit = {
+  id: "abc",
+  title: "Some.Show.S01E05.1080p.x264.WEB",
+  bytes: 1_400_000_000,
+  seeders: 42,
+  peers: 5,
+};
 
 describe("episodeMatchesTitle", () => {
   it("matches S01E05", () => {
@@ -34,5 +42,49 @@ describe("episodeMatchesTitle", () => {
   it("matches non-zero-padded S/E forms (S1E5)", () => {
     expect(episodeMatchesTitle("Show.S1E5.DVDRip", 1, 5)).toBe(true);
     expect(episodeMatchesTitle("Show.1x5.WEB", 1, 5)).toBe(true);
+  });
+});
+
+describe("knaben.toResult magnet selection", () => {
+  it("prefers magnetUrl when present", () => {
+    const r = _internals.toResult({ ...baseHit, magnetUrl: "magnet:?xt=urn:btih:NEWEST" });
+    expect(r?.magnet).toBe("magnet:?xt=urn:btih:NEWEST");
+  });
+
+  it("falls back to magnet field", () => {
+    const r = _internals.toResult({ ...baseHit, magnet: "magnet:?xt=urn:btih:OLDER" });
+    expect(r?.magnet).toBe("magnet:?xt=urn:btih:OLDER");
+  });
+
+  it("reconstructs magnet from hash when no link is provided", () => {
+    const r = _internals.toResult({
+      ...baseHit,
+      hash: "1234567890abcdef1234567890abcdef12345678",
+    });
+    expect(r?.magnet).toMatch(/^magnet:\?xt=urn:btih:1234567890abcdef/);
+  });
+
+  it("returns null when no magnet, no link, no hash", () => {
+    const r = _internals.toResult(baseHit);
+    expect(r).toBeNull();
+  });
+
+  it("filters out xvid releases", () => {
+    const r = _internals.toResult({
+      ...baseHit,
+      title: "Show.S01E05.XViD-GROUP",
+      magnet: "magnet:?xt=urn:btih:abc",
+    });
+    expect(r).toBeNull();
+  });
+
+  it("preserves season/episode when tagged", () => {
+    const r = _internals.toResult({
+      ...baseHit,
+      magnet: "magnet:?xt=urn:btih:abc",
+      season: 2,
+      episode: 7,
+    });
+    expect(r).toMatchObject({ season: 2, episode: 7 });
   });
 });

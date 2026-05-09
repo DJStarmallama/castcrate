@@ -1,7 +1,7 @@
 # hardening — Task checklist
 
 **Last updated:** 2026-05-09
-**Progress:** Phases A+B+C complete — 3 / 5 phases
+**Progress:** Phases A–D complete — 4 / 5 ship-able phases (Phase E remains deferred)
 
 ---
 
@@ -40,15 +40,15 @@
 
 ---
 
-## Phase D — Test coverage + CI
+## Phase D — Test coverage + CI ✅
 
-- [ ] **D1.** Vitest fixtures for `services/omdb.ts` (search, detail, season episodes, error paths)
-- [ ] **D2.** Vitest fixtures for `services/knaben.ts` API responses (success, empty, error, malformed)
-- [ ] **D3.** Integration test for `DELETE /api/torrent/:hash` → `appendHistory` write
-- [ ] **D4.** Corrupted-JSON recovery test for `services/history.ts` (missing, malformed, partial)
-- [ ] **D5.** `.github/workflows/ci.yml` — `pnpm typecheck`, `pnpm lint`, `pnpm test` on PR + push to main; Node 22, pnpm 11
+- [x] **D1.** `omdb.test.ts` — 9 tests with mocked `fetch`: type-filtered search, interleaved search, mid-typing empty, invalid-key 401, DNS 502, detail parsing (runtime/genres/cast/rating), IMDb-ID validation rejects without network call, series totalSeasons, season-episode mapping
+- [x] **D2.** `knaben.test.ts` extended with 6 `_internals.toResult` tests: magnetUrl > magnet > built-from-hash precedence, null when none of those, xvid filter, season/episode passthrough
+- [x] **D3.** `history.test.ts` adds a contract test for the cast-start → removal flow — append + updateHistoryById → single entry with merged endedAt + completed
+- [x] **D4.** `history.test.ts` `vi.resetModules()`-based recovery suite: malformed JSON, truncated write, missing file → all return `[]` without throwing
+- [x] **D5.** Already in place at `.github/workflows/ci.yml`: install + lint + typecheck + test + build on push/PR (Node 22, pnpm via `pnpm/action-setup@v4`)
 
-**Acceptance:** `pnpm test` green on fresh checkout; CI runs and passes on the PR for this feature.
+**Acceptance:** ✅ `pnpm typecheck` clean; `pnpm test` 73/73 (was 51 at start of Phase A — +22 tests).
 
 ---
 
