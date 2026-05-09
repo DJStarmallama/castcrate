@@ -38,7 +38,6 @@ export default function App() {
       }),
     onSuccess: (data) => {
       setSession(data);
-      setFindFor((prev) => prev);
       setStartError(null);
     },
     onError: (err: Error) => {

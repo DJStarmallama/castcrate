@@ -17,7 +17,7 @@ const cache = new LRUCache<string, TorrentResult[]>({
   ttl: 1000 * 60 * 60,
 });
 
-interface YtsTorrent {
+export interface YtsTorrent {
   url: string;
   hash: string;
   quality: string;
@@ -30,7 +30,7 @@ interface YtsTorrent {
   audio_channels: string;
 }
 
-interface YtsMovie {
+export interface YtsMovie {
   id: number;
   title: string;
   title_long: string;
@@ -44,7 +44,7 @@ interface YtsListResponse {
   data: { movie_count: number; movies?: YtsMovie[] };
 }
 
-function buildMagnet(hash: string, title: string): string {
+export function buildMagnet(hash: string, title: string): string {
   const trackers = TRACKERS.map((t) => `&tr=${encodeURIComponent(t)}`).join("");
   return `magnet:?xt=urn:btih:${hash}&dn=${encodeURIComponent(title)}${trackers}`;
 }
@@ -60,7 +60,7 @@ function rankQuality(q: string): number {
   return 0;
 }
 
-function toResult(t: YtsTorrent, m: YtsMovie): TorrentResult | null {
+export function toResult(t: YtsTorrent, m: YtsMovie): TorrentResult | null {
   const q = t.quality;
   if (q !== "1080p" && q !== "720p") return null;
   if (!isCastCompatible(t)) return null;
@@ -77,10 +77,22 @@ function toResult(t: YtsTorrent, m: YtsMovie): TorrentResult | null {
   };
 }
 
-function rank(a: TorrentResult, b: TorrentResult): number {
+export function rank(a: TorrentResult, b: TorrentResult): number {
   const qd = rankQuality(b.resolution) - rankQuality(a.resolution);
   if (qd !== 0) return qd;
   return b.seeds - a.seeds;
+}
+
+export function rankAndFilter(movies: YtsMovie[]): TorrentResult[] {
+  const out: TorrentResult[] = [];
+  for (const m of movies) {
+    for (const t of m.torrents) {
+      const r = toResult(t, m);
+      if (r) out.push(r);
+    }
+  }
+  out.sort(rank);
+  return out;
 }
 
 export async function searchTorrents(title: string, year?: number): Promise<TorrentResult[]> {
@@ -114,14 +126,7 @@ export async function searchTorrents(title: string, year?: number): Promise<Torr
   const matched = year ? movies.filter((m) => m.year === year) : movies;
   const pool = matched.length > 0 ? matched : movies;
 
-  const results: TorrentResult[] = [];
-  for (const m of pool) {
-    for (const t of m.torrents) {
-      const r = toResult(t, m);
-      if (r) results.push(r);
-    }
-  }
-  results.sort(rank);
+  const results = rankAndFilter(pool);
   cache.set(key, results);
   return results;
 }

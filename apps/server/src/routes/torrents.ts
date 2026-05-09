@@ -12,6 +12,7 @@ import {
   getMeta,
 } from "../services/torrent.js";
 import { appendHistory } from "../services/history.js";
+import { parseRange } from "../lib/range.js";
 
 function extToMime(name: string): string {
   const ext = extname(name).toLowerCase();
@@ -19,35 +20,6 @@ function extToMime(name: string): string {
   if (ext === ".mkv") return "video/x-matroska";
   if (ext === ".webm") return "video/webm";
   return "application/octet-stream";
-}
-
-function parseRange(header: string | undefined, size: number) {
-  if (!header) return null;
-  const m = /^bytes=(\d*)-(\d*)$/.exec(header);
-  if (!m) return null;
-  const startStr = m[1];
-  const endStr = m[2];
-  let start: number;
-  let end: number;
-  if (startStr === "" && endStr !== "") {
-    // suffix range: last N bytes
-    const suffix = Number(endStr);
-    start = Math.max(0, size - suffix);
-    end = size - 1;
-  } else {
-    start = startStr === "" ? 0 : Number(startStr);
-    end = endStr === "" ? size - 1 : Number(endStr);
-  }
-  if (
-    !Number.isFinite(start) ||
-    !Number.isFinite(end) ||
-    start < 0 ||
-    end >= size ||
-    start > end
-  ) {
-    return null;
-  }
-  return { start, end };
 }
 
 export async function torrentRoutes(app: FastifyInstance) {
