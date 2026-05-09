@@ -1,7 +1,7 @@
 import { LRUCache } from "lru-cache";
 import type { TorrentResult } from "@castcrate/shared";
 
-const YTS_BASE = process.env.YTS_BASE_URL ?? "https://yts.mx/api/v2";
+const YTS_BASE = process.env.YTS_BASE_URL ?? "https://movies-api.accel.li/api/v2";
 
 const TRACKERS = [
   "udp://open.demonii.com:1337/announce",
@@ -111,8 +111,9 @@ export async function searchTorrents(title: string, year?: number): Promise<Torr
     const cause = (err as Error & { cause?: { code?: string } })?.cause;
     if (cause?.code === "ENOTFOUND" || cause?.code === "EAI_AGAIN") {
       throw new Error(
-        `Cannot reach YTS — DNS lookup failed. Your network may be blocking yts.mx. ` +
-          `Try changing your DNS to 1.1.1.1, using a VPN, or set YTS_BASE_URL in .env to a mirror.`,
+        `Cannot reach YTS API at ${YTS_BASE}. The host may have moved (YTS rotates ` +
+          `domains when seized). Try setting YTS_BASE_URL in .env to a working mirror, ` +
+          `or use a VPN if the issue is your ISP.`,
       );
     }
     throw err;

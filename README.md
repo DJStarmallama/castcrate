@@ -40,12 +40,12 @@ The first time you run, macOS will prompt to allow incoming connections — requ
 | `DOWNLOAD_PATH` | `~/Downloads/CastCrate` | Where torrents are saved |
 | `PORT` | `3000` | Server port |
 | `BUFFER_PERCENT` | `2` | Pre-cast buffer threshold |
-| `YTS_BASE_URL` | `https://yts.mx/api/v2` | Override only if your network blocks `yts.mx` |
+| `YTS_BASE_URL` | `https://movies-api.accel.li/api/v2` | YTS rotates domains when seized; override if the default stops responding |
 
 ## Networking notes
 
 - The server binds to `0.0.0.0:3000` so Chromecasts can fetch the stream — Mac firewall will prompt on first run.
-- Many home networks block `yts.mx` at the DNS level. If torrent search fails with a friendly DNS error, switch to a public DNS like `1.1.1.1`, use a VPN, or set `YTS_BASE_URL`.
+- YTS rotates domains when one gets seized. The default `YTS_BASE_URL` is the current canonical API host as of 2026-05. If torrent search starts failing with a network error, find an active mirror and override `YTS_BASE_URL` in `.env`.
 - Discovery uses `_googlecast._tcp` mDNS; the Mac and Chromecast must be on the same VLAN/Wi-Fi.
 
 ## Scripts
