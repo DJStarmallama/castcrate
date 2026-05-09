@@ -61,7 +61,7 @@ Each item is feature-sized; spawn `/start-feature` when ready.
 - [ ] **E3.** Manual file picker for multi-file torrents
 - [ ] **E4.** Editable settings (PATCH `/api/settings` → `~/.castcrate/settings.json`)
 - [x] **E5.** Knaben season-pack search path — `searchKnabenSeasonPack()` + `seasonPackMatchesTitle()`; wired into `/api/search/torrents/episode` when EZTV pack is empty
-- [ ] **E6.** Per-indexer DNS-bypass scoping
+- [x] **E6.** Per-indexer DNS-bypass scoping — substring allowlist (default `yts,eztv,knaben`); other hostnames (mDNS, OMDb, etc.) use the OS resolver. `DNS_BYPASS_HOSTS=*` reverts to legacy global mode.
 
 ---
 

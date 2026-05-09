@@ -2,16 +2,21 @@ import dns, { resolve4, setServers } from "node:dns";
 
 /**
  * Make Node's outbound DNS resolution use Cloudflare's public resolver
- * (1.1.1.1 / 1.0.0.1) instead of the OS resolver. Some networks NXDOMAIN
- * well-known torrent indexer hostnames at the resolver level even when
- * the hosts themselves are reachable.
+ * (1.1.1.1 / 1.0.0.1) instead of the OS resolver — but only for indexer
+ * hostnames. Some networks NXDOMAIN well-known torrent indexer hostnames
+ * at the resolver level even when the hosts themselves are reachable.
  *
  * Strategy: monkey-patch `dns.lookup` (the function `net`/`undici`/`fetch`
- * use) to first try `dns.resolve4` against the configured upstreams. If
- * that yields no answer, fall through to the original lookup so non-DNS
- * problems (e.g., hostnames only in /etc/hosts) still work.
+ * use). For hostnames matching the allowlist, try `dns.resolve4` against
+ * the configured upstreams; otherwise (and on failure) fall through to the
+ * original lookup so non-DNS problems (e.g. hostnames only in /etc/hosts)
+ * still work.
  *
- * Set DNS_BYPASS=false in .env to disable.
+ * Configuration (env):
+ *   DNS_BYPASS=false           — disable entirely
+ *   DNS_UPSTREAMS=1.1.1.1,...  — public resolvers to query
+ *   DNS_BYPASS_HOSTS=yts,eztv  — substring allowlist (default: yts,eztv,knaben)
+ *   DNS_BYPASS_HOSTS=*         — bypass for every hostname (legacy global mode)
  */
 export function setupDnsBypass(): boolean {
   if (process.env.DNS_BYPASS === "false") return false;
@@ -20,6 +25,17 @@ export function setupDnsBypass(): boolean {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+
+  // Default allowlist covers the indexers we ship today. Globs aren't needed —
+  // a substring match handles `yts.bz`, `eztvx.to`, `api.knaben.org` cleanly.
+  const hostsRaw = process.env.DNS_BYPASS_HOSTS ?? "yts,eztv,knaben";
+  const wildcard = hostsRaw.trim() === "*";
+  const allowlist = wildcard
+    ? null
+    : hostsRaw
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
 
   setServers(upstreams);
 
@@ -36,6 +52,12 @@ export function setupDnsBypass(): boolean {
 
   const original = dns.lookup;
 
+  const isIndexerHost = (hostname: string): boolean => {
+    if (allowlist === null) return true; // wildcard
+    const h = hostname.toLowerCase();
+    return allowlist.some((p) => h.includes(p));
+  };
+
   const patched = (
     hostname: string,
     optsOrCb: LookupOpts | LookupCallback | LookupAllCallback,
@@ -51,9 +73,9 @@ export function setupDnsBypass(): boolean {
       cb = maybeCb!;
     }
 
-    // IPv6 lookups: pass through. We only redirect IPv4 (most indexers
-    // serve A records anyway).
-    if (opts?.family === 6) {
+    // Skip the bypass for non-indexer hosts (mDNS, OMDb, anything else) and
+    // for IPv6 lookups (most indexers serve A records anyway).
+    if (!isIndexerHost(hostname) || opts?.family === 6) {
       // @ts-expect-error overload
       return original(hostname, opts, cb);
     }
