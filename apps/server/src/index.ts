@@ -18,6 +18,7 @@ const { subtitleRoutes } = await import("./routes/subtitles.js");
 const { shutdown } = await import("./services/torrent.js");
 const { startDiscovery, stopDiscovery } = await import("./services/discovery.js");
 const { shutdownCast } = await import("./services/cast.js");
+const { shutdownTranscodes } = await import("./services/transcoder.js");
 
 const app = Fastify({ logger: true });
 
@@ -48,6 +49,7 @@ startDiscovery();
 app.addHook("onClose", async () => {
   stopDiscovery();
   await shutdownCast();
+  await shutdownTranscodes();
   await shutdown();
 });
 

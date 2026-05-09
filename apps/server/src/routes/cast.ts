@@ -1,9 +1,19 @@
 import type { FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
 import type { CastAction } from "@castcrate/shared";
 import { listDevices } from "../services/discovery.js";
 import { play, control, getSession, type PlayParams } from "../services/cast.js";
 import { getLanIp } from "../lib/network.js";
 import { config } from "../lib/config.js";
+import { getMeta, getStatus, setMetaHistoryId } from "../services/torrent.js";
+import { appendHistory } from "../services/history.js";
+
+// Extract infoHash from a streamPath like "/stream/abc123" or
+// "/stream/abc123/transcoded". Returns null if the path doesn't match.
+function infoHashFromStreamPath(streamPath: string): string | null {
+  const m = /^\/stream\/([a-f0-9]+)/i.exec(streamPath);
+  return m ? m[1]! : null;
+}
 
 const VALID_ACTIONS: ReadonlySet<CastAction> = new Set([
   "play",
@@ -76,6 +86,31 @@ export async function castRoutes(app: FastifyInstance) {
         ];
       }
       const result = await play(params);
+
+      // Record cast start in history. Removal will update this entry rather
+      // than appending a duplicate (see DELETE /api/torrent/:infoHash).
+      const infoHash = infoHashFromStreamPath(streamPath);
+      if (infoHash) {
+        const m = getMeta(infoHash);
+        if (m && !m.historyId) {
+          const status = await getStatus(infoHash);
+          const now = new Date().toISOString();
+          const historyId = randomUUID();
+          await appendHistory({
+            id: historyId,
+            title: m.title,
+            posterUrl: m.posterUrl,
+            imdbId: m.imdbId,
+            resolution: m.resolution,
+            videoName: status?.name ?? title,
+            startedAt: m.startedAt,
+            endedAt: now,
+            completed: false,
+          });
+          setMetaHistoryId(infoHash, historyId);
+        }
+      }
+
       return { ...result, streamUrl };
     } catch (err) {
       const msg = err instanceof Error ? err.message : "cast failed";

@@ -1,10 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 const HISTORY_DIR = join(homedir(), ".castcrate");
 const HISTORY_PATH = join(HISTORY_DIR, "history.json");
+const TMP_PATH = `${HISTORY_PATH}.tmp`;
 
 export interface HistoryEntry {
   id: string;
@@ -20,18 +21,15 @@ export interface HistoryEntry {
 
 let cache: HistoryEntry[] | null = null;
 
-async function ensureFile(): Promise<void> {
+async function ensureDir(): Promise<void> {
   if (!existsSync(HISTORY_DIR)) {
     await mkdir(HISTORY_DIR, { recursive: true });
-  }
-  if (!existsSync(HISTORY_PATH)) {
-    await writeFile(HISTORY_PATH, "[]", "utf8");
   }
 }
 
 async function load(): Promise<HistoryEntry[]> {
   if (cache) return cache;
-  await ensureFile();
+  await ensureDir();
   try {
     const raw = await readFile(HISTORY_PATH, "utf8");
     cache = JSON.parse(raw) as HistoryEntry[];
@@ -41,10 +39,13 @@ async function load(): Promise<HistoryEntry[]> {
   return cache;
 }
 
+// Atomic write: stage to a sibling .tmp file, then rename. POSIX rename is
+// atomic, so a crash during writeFile leaves the original intact.
 async function save(): Promise<void> {
   if (!cache) return;
-  await ensureFile();
-  await writeFile(HISTORY_PATH, JSON.stringify(cache, null, 2), "utf8");
+  await ensureDir();
+  await writeFile(TMP_PATH, JSON.stringify(cache, null, 2), "utf8");
+  await rename(TMP_PATH, HISTORY_PATH);
 }
 
 export async function listHistory(): Promise<HistoryEntry[]> {
@@ -58,6 +59,19 @@ export async function appendHistory(entry: HistoryEntry): Promise<void> {
   if (entries.length > 200) entries.length = 200;
   cache = entries;
   await save();
+}
+
+export async function updateHistoryById(
+  id: string,
+  partial: Partial<Omit<HistoryEntry, "id">>,
+): Promise<boolean> {
+  const entries = await load();
+  const idx = entries.findIndex((e) => e.id === id);
+  if (idx === -1) return false;
+  entries[idx] = { ...entries[idx]!, ...partial };
+  cache = entries;
+  await save();
+  return true;
 }
 
 export async function clearHistory(): Promise<void> {

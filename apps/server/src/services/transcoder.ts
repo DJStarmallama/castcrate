@@ -14,8 +14,8 @@ export interface FfmpegInfo {
 
 let ffmpegInfoCache: FfmpegInfo | null = null;
 
-export async function checkFfmpeg(): Promise<FfmpegInfo> {
-  if (ffmpegInfoCache) return ffmpegInfoCache;
+export async function checkFfmpeg(force = false): Promise<FfmpegInfo> {
+  if (!force && ffmpegInfoCache) return ffmpegInfoCache;
   try {
     const { stdout } = await execFileP(config.ffmpegPath, ["-version"]);
     const firstLine = stdout.split("\n")[0] ?? "";
@@ -30,6 +30,10 @@ export async function checkFfmpeg(): Promise<FfmpegInfo> {
   }
   return ffmpegInfoCache;
 }
+
+// Active subprocesses, so a server shutdown can cleanly terminate them
+// instead of orphaning ffmpeg as zombie processes.
+const activeProcesses = new Set<ChildProcessWithoutNullStreams>();
 
 export interface TranscodeHandle {
   process: ChildProcessWithoutNullStreams;
@@ -65,10 +69,26 @@ export function spawnTranscode(source: Readable): TranscodeHandle {
     stdio: ["pipe", "pipe", "pipe"],
   });
 
+  activeProcesses.add(process);
+  process.once("exit", () => activeProcesses.delete(process));
+
   // Pipe torrent bytes into ffmpeg, swallow EPIPE if ffmpeg exits early
   source.pipe(process.stdin).on("error", () => {});
 
   return { process, stdout: process.stdout };
+}
+
+/** Kill every live transcode subprocess. Wired to the Fastify onClose hook. */
+export async function shutdownTranscodes(timeoutMs = 1500): Promise<void> {
+  if (activeProcesses.size === 0) return;
+  for (const p of activeProcesses) {
+    if (!p.killed) p.kill("SIGTERM");
+  }
+  await new Promise((resolve) => setTimeout(resolve, timeoutMs));
+  for (const p of activeProcesses) {
+    if (!p.killed) p.kill("SIGKILL");
+  }
+  activeProcesses.clear();
 }
 
 function parseBitrateMultiplier(rate: string, mul: number): string {

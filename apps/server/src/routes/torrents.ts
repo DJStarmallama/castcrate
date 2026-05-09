@@ -14,9 +14,47 @@ import {
   setMeta,
   getMeta,
 } from "../services/torrent.js";
-import { appendHistory } from "../services/history.js";
+import { appendHistory, updateHistoryById } from "../services/history.js";
 import { parseRange } from "../lib/range.js";
 import { spawnTranscode, checkFfmpeg } from "../services/transcoder.js";
+
+// Cap on how long we'll wait for the first byte from WebTorrent before
+// returning 504. Bytes already in flight aren't subject to this — once
+// the stream starts, network stalls are the client's problem.
+const FIRST_BYTE_TIMEOUT_MS = 30_000;
+
+function waitForFirstByte(
+  stream: NodeJS.ReadableStream,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onReadable = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (err: Error) => {
+      cleanup();
+      reject(err);
+    };
+    const onEnd = () => {
+      cleanup();
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("first-byte timeout"));
+    }, timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      stream.off("readable", onReadable);
+      stream.off("error", onError);
+      stream.off("end", onEnd);
+    };
+    stream.once("readable", onReadable);
+    stream.once("error", onError);
+    stream.once("end", onEnd);
+  });
+}
 
 function extToMime(name: string): string {
   const ext = extname(name).toLowerCase();
@@ -180,17 +218,39 @@ export async function torrentRoutes(app: FastifyInstance) {
         const status = await getStatus(req.params.infoHash);
         const m = getMeta(req.params.infoHash);
         if (status && m) {
-          await appendHistory({
-            id: randomUUID(),
-            title: m.title,
-            posterUrl: m.posterUrl,
-            imdbId: m.imdbId,
-            resolution: m.resolution,
-            videoName: status.name,
-            startedAt: m.startedAt,
-            endedAt: new Date().toISOString(),
-            completed: status.done,
-          });
+          const endedAt = new Date().toISOString();
+          // If a cast-start entry exists, update it. Otherwise append.
+          if (m.historyId) {
+            const ok = await updateHistoryById(m.historyId, {
+              endedAt,
+              completed: status.done,
+            });
+            if (!ok) {
+              await appendHistory({
+                id: randomUUID(),
+                title: m.title,
+                posterUrl: m.posterUrl,
+                imdbId: m.imdbId,
+                resolution: m.resolution,
+                videoName: status.name,
+                startedAt: m.startedAt,
+                endedAt,
+                completed: status.done,
+              });
+            }
+          } else {
+            await appendHistory({
+              id: randomUUID(),
+              title: m.title,
+              posterUrl: m.posterUrl,
+              imdbId: m.imdbId,
+              resolution: m.resolution,
+              videoName: status.name,
+              startedAt: m.startedAt,
+              endedAt,
+              completed: status.done,
+            });
+          }
         }
         await removeTorrent(req.params.infoHash);
         return reply.code(204).send();
@@ -212,6 +272,27 @@ export async function torrentRoutes(app: FastifyInstance) {
       const contentType = extToMime(file.name);
       const range = parseRange(req.headers.range, size);
 
+      const stream = range
+        ? file.createReadStream({ start: range.start, end: range.end })
+        : file.createReadStream();
+
+      // Wait for the first byte before responding so we can return 504
+      // when WebTorrent has no peers and the bytes never arrive — instead
+      // of letting the client hang on an open connection forever.
+      try {
+        await waitForFirstByte(stream, FIRST_BYTE_TIMEOUT_MS);
+      } catch {
+        try {
+          stream.destroy();
+        } catch {
+          /* ignore */
+        }
+        return reply.code(504).send({
+          error:
+            "stream stalled — no bytes received within timeout. The torrent may have no peers.",
+        });
+      }
+
       reply.header("Accept-Ranges", "bytes");
       reply.header("Content-Type", contentType);
 
@@ -220,10 +301,10 @@ export async function torrentRoutes(app: FastifyInstance) {
         reply.code(206);
         reply.header("Content-Range", `bytes ${start}-${end}/${size}`);
         reply.header("Content-Length", String(end - start + 1));
-        return reply.send(file.createReadStream({ start, end }));
+        return reply.send(stream);
       }
       reply.header("Content-Length", String(size));
-      return reply.send(file.createReadStream());
+      return reply.send(stream);
     },
   );
 

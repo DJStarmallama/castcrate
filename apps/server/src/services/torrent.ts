@@ -77,6 +77,9 @@ export interface TorrentMeta {
   imdbId: string | null;
   resolution: string | null;
   startedAt: string;
+  // Set when a history entry has already been written for this torrent
+  // (e.g. on cast start). Removal uses this to update instead of duplicate.
+  historyId?: string;
 }
 
 const meta = new Map<string, TorrentMeta>();
@@ -87,6 +90,11 @@ export function setMeta(infoHash: string, m: TorrentMeta): void {
 
 export function getMeta(infoHash: string): TorrentMeta | undefined {
   return meta.get(infoHash);
+}
+
+export function setMetaHistoryId(infoHash: string, historyId: string): void {
+  const m = meta.get(infoHash);
+  if (m) m.historyId = historyId;
 }
 
 export async function startTorrent(magnet: string): Promise<TorrentSession> {

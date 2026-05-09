@@ -9,16 +9,22 @@ export async function healthRoutes(app: FastifyInstance) {
     timestamp: new Date().toISOString(),
   }));
 
-  app.get("/api/system/check", async () => {
-    const ff = await checkFfmpeg();
-    return {
-      ok: true,
-      omdbConfigured: Boolean(config.omdbApiKey),
-      downloadPath: config.downloadPath,
-      bufferPercent: config.bufferPercent,
-      transcodeBufferPercent: config.transcodeBufferPercent,
-      transcodeBitrate: config.transcodeBitrate,
-      ffmpeg: ff,
-    };
-  });
+  app.get<{ Querystring: { refresh?: string } }>(
+    "/api/system/check",
+    async (req) => {
+      // ?refresh=1 forces a fresh ffmpeg probe — useful after the user installs
+      // it without restarting the server.
+      const refresh = req.query.refresh === "1" || req.query.refresh === "true";
+      const ff = await checkFfmpeg(refresh);
+      return {
+        ok: true,
+        omdbConfigured: Boolean(config.omdbApiKey),
+        downloadPath: config.downloadPath,
+        bufferPercent: config.bufferPercent,
+        transcodeBufferPercent: config.transcodeBufferPercent,
+        transcodeBitrate: config.transcodeBitrate,
+        ffmpeg: ff,
+      };
+    },
+  );
 }

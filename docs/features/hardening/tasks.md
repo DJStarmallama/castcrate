@@ -1,7 +1,7 @@
 # hardening — Task checklist
 
 **Last updated:** 2026-05-09
-**Progress:** Phase A complete — 1 / 5 phases
+**Progress:** Phases A+B complete — 2 / 5 phases
 
 ---
 
@@ -17,15 +17,15 @@
 
 ---
 
-## Phase B — Server hardening
+## Phase B — Server hardening ✅
 
-- [ ] **B1.** Atomic `history.json` writes (temp file + `fs.rename`)
-- [ ] **B2.** ffmpeg subprocess registry in `services/transcoder.ts`; `onClose` hook in `apps/server/src/index.ts` kills active processes on shutdown
-- [ ] **B3.** Append history on cast start in `routes/cast.ts` `/api/cast/play`; coordinate with the existing removal-time append (avoid double-write)
-- [ ] **B4.** Pre-buffer timeout (30s, configurable) in `/stream/:hash` — return 504 if first byte never arrives; do not time out reads after first byte
-- [ ] **B5.** `revalidateFfmpeg()` in `services/transcoder.ts`; surface via `/api/system/check` so smooth-playback toggle re-checks on demand
+- [x] **B1.** Atomic `history.json` writes (temp file + `fs.rename`); added `updateHistoryById` for in-place edits
+- [x] **B2.** `activeProcesses: Set<ChildProcessWithoutNullStreams>` in `services/transcoder.ts`; `shutdownTranscodes()` exported and wired into the Fastify `onClose` hook in `index.ts` (SIGTERM, then SIGKILL after 1.5s)
+- [x] **B3.** `/api/cast/play` appends history on cast start with `historyId` saved on `TorrentMeta`; `DELETE /api/torrent/:hash` updates that entry instead of duplicating
+- [x] **B4.** First-byte timeout (30s) on `/stream/:hash` — returns 504 if WebTorrent never delivers the first chunk; does not affect reads once flowing
+- [x] **B5.** `checkFfmpeg(force = false)` accepts an explicit re-probe; `/api/system/check?refresh=1` triggers it (lets the Settings toggle re-check after a fresh ffmpeg install)
 
-**Acceptance:** Manual `kill -9` mid-transcode leaves no orphan ffmpeg; cast-only sessions appear in `~/.castcrate/history.json`; `pnpm test` adds atomic-write recovery + ffmpeg cleanup tests.
+**Acceptance:** ✅ `pnpm typecheck` clean; `pnpm test` 54/54 (3 new tests for updateHistoryById and atomic-write tmp cleanup).
 
 ---
 

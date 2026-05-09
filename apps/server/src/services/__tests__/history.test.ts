@@ -10,7 +10,8 @@ vi.mock("node:os", async () => {
   return { ...real, homedir: () => TMP };
 });
 
-const { listHistory, appendHistory, clearHistory } = await import("../history.js");
+const { listHistory, appendHistory, clearHistory, updateHistoryById } =
+  await import("../history.js");
 
 afterAll(() => {
   rmSync(TMP, { recursive: true, force: true });
@@ -58,5 +59,31 @@ describe("history", () => {
     const list = await listHistory();
     expect(list.length).toBe(200);
     expect(list[0]?.id).toBe("id-209");
+  });
+
+  it("updateHistoryById merges fields and returns true", async () => {
+    await appendHistory(sample({ id: "a", completed: false }));
+    const ok = await updateHistoryById("a", {
+      endedAt: new Date(42).toISOString(),
+      completed: true,
+    });
+    expect(ok).toBe(true);
+    const list = await listHistory();
+    expect(list[0]?.completed).toBe(true);
+    expect(list[0]?.endedAt).toBe(new Date(42).toISOString());
+  });
+
+  it("updateHistoryById returns false for unknown id", async () => {
+    await appendHistory(sample({ id: "a" }));
+    const ok = await updateHistoryById("missing", { completed: false });
+    expect(ok).toBe(false);
+  });
+
+  it("atomic write leaves no .tmp behind on success", async () => {
+    const { existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    await appendHistory(sample({ id: "a" }));
+    expect(existsSync(join(TMP, ".castcrate", "history.json"))).toBe(true);
+    expect(existsSync(join(TMP, ".castcrate", "history.json.tmp"))).toBe(false);
   });
 });
