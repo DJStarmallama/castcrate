@@ -7,11 +7,7 @@ import {
   rankTorrent,
 } from "../lib/quality.js";
 
-const KNABEN_API = process.env.KNABEN_BASE_URL ?? "https://api.knaben.eu/v1";
-
-// Knaben category IDs — see https://knaben.eu/api/
-const CAT_TV = 3000000;
-const CAT_MOVIES = 2000000;
+const KNABEN_API = process.env.KNABEN_BASE_URL ?? "https://api.knaben.org/v1";
 
 const cache = new LRUCache<string, TorrentResult[]>({
   max: 200,
@@ -25,6 +21,9 @@ interface KnabenHit {
   seeders?: number;
   peers?: number;
   bytes?: number;
+  /** Newer Knaben API. */
+  magnetUrl?: string;
+  /** Older response shape; kept as fallback. */
   magnet?: string;
   imdbId?: string | null;
   season?: number | null;
@@ -49,6 +48,7 @@ function buildMagnet(hash: string, title: string): string {
 }
 
 function magnetFor(hit: KnabenHit): string | null {
+  if (hit.magnetUrl) return hit.magnetUrl;
   if (hit.magnet) return hit.magnet;
   if (hit.hash) return buildMagnet(hit.hash, hit.title);
   return null;
@@ -103,12 +103,18 @@ export function episodeMatchesTitle(
   season: number,
   episode: number,
 ): boolean {
-  // Common patterns: S01E05, s01e05, 1x05, Season 1 Episode 5
+  // Common patterns: S01E05, S1E5, s01e05, 1x05, Season 1 Episode 5.
+  // The non-zero-padded form (S1E5) shows up on a lot of older / niche
+  // releases — without it we miss real torrents.
   const sxx = String(season).padStart(2, "0");
   const exx = String(episode).padStart(2, "0");
+  const sxRaw = String(season);
+  const exRaw = String(episode);
   const patterns = [
     new RegExp(`\\bS${sxx}E${exx}\\b`, "i"),
+    new RegExp(`\\bS${sxRaw}E${exRaw}\\b`, "i"),
     new RegExp(`\\b${season}x${exx}\\b`, "i"),
+    new RegExp(`\\b${season}x${exRaw}\\b`, "i"),
     new RegExp(`\\bSeason\\s*${season}\\b.*\\bEpisode\\s*${episode}\\b`, "i"),
   ];
   return patterns.some((p) => p.test(title));
@@ -128,7 +134,6 @@ export async function searchKnabenEpisode(
     query: `${seriesTitle} ${epTag}`,
     search_type: "score",
     search_field: "title",
-    categories: [CAT_TV],
     size: 30,
     hide_xxx: true,
     order_by: "seeders",
@@ -164,7 +169,6 @@ export async function searchKnabenMovie(
     query,
     search_type: "score",
     search_field: "title",
-    categories: [CAT_MOVIES],
     size: 30,
     hide_xxx: true,
     order_by: "seeders",

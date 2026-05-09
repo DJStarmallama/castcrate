@@ -27,8 +27,12 @@ describe("episodeMatchesTitle", () => {
     expect(episodeMatchesTitle("Show.S02E05.1080p", 1, 5)).toBe(false);
   });
 
-  it("requires zero-padded episode numbers in S/E form", () => {
-    // S1E5 (not zero-padded) wouldn't normally appear but make sure we don't false-positive on substrings
+  it("does not false-positive on substrings", () => {
     expect(episodeMatchesTitle("Show.S01E50.1080p", 1, 5)).toBe(false);
+  });
+
+  it("matches non-zero-padded S/E forms (S1E5)", () => {
+    expect(episodeMatchesTitle("Show.S1E5.DVDRip", 1, 5)).toBe(true);
+    expect(episodeMatchesTitle("Show.1x5.WEB", 1, 5)).toBe(true);
   });
 });
