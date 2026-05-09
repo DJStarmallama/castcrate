@@ -12,6 +12,7 @@ const { moviesRoutes } = await import("./routes/movies.js");
 const { torrentRoutes } = await import("./routes/torrents.js");
 const { castRoutes } = await import("./routes/cast.js");
 const { historyRoutes } = await import("./routes/history.js");
+const { subtitleRoutes } = await import("./routes/subtitles.js");
 const { shutdown } = await import("./services/torrent.js");
 const { startDiscovery, stopDiscovery } = await import("./services/discovery.js");
 const { shutdownCast } = await import("./services/cast.js");
@@ -24,6 +25,7 @@ await app.register(moviesRoutes);
 await app.register(torrentRoutes);
 await app.register(castRoutes);
 await app.register(historyRoutes);
+await app.register(subtitleRoutes);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webDist = join(here, "../../web/dist");

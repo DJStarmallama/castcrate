@@ -20,10 +20,21 @@ interface CastClient {
   close(): void;
 }
 
+interface MediaTextTrack {
+  trackId: number;
+  type: "TEXT";
+  trackContentId: string;
+  trackContentType: string;
+  name: string;
+  language: string;
+  subtype: "SUBTITLES" | "CAPTIONS";
+}
+
 interface MediaPayload {
   contentId: string;
   contentType: string;
   streamType: "BUFFERED" | "LIVE";
+  tracks?: MediaTextTrack[];
   metadata?: {
     type: number;
     metadataType: number;
@@ -63,12 +74,20 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 
+export interface PlayTrack {
+  url: string;
+  language: string;
+  name: string;
+}
+
 export interface PlayParams {
   deviceId: string;
   streamUrl: string;
   title: string;
   posterUrl?: string;
   contentType?: string;
+  /** Optional subtitle tracks (VTT). Only the first track is enabled by default. */
+  tracks?: PlayTrack[];
 }
 
 export async function play(params: PlayParams): Promise<{ sessionId: string }> {
@@ -88,10 +107,21 @@ export async function play(params: PlayParams): Promise<{ sessionId: string }> {
     client.launch(DefaultMediaReceiver, (err, p) => (err ? reject(err) : resolve(p)));
   });
 
+  const tracks: MediaTextTrack[] | undefined = params.tracks?.map((t, i) => ({
+    trackId: i + 1,
+    type: "TEXT",
+    trackContentId: t.url,
+    trackContentType: "text/vtt",
+    name: t.name,
+    language: t.language,
+    subtype: "SUBTITLES",
+  }));
+
   const media: MediaPayload = {
     contentId: params.streamUrl,
     contentType: params.contentType ?? "video/mp4",
     streamType: "BUFFERED",
+    ...(tracks && tracks.length > 0 ? { tracks } : {}),
     metadata: {
       type: 0,
       metadataType: 1, // Movie
@@ -100,8 +130,17 @@ export async function play(params: PlayParams): Promise<{ sessionId: string }> {
     },
   };
 
+  const loadOptions: { autoplay: boolean; activeTrackIds?: number[] } = {
+    autoplay: true,
+  };
+  if (tracks && tracks.length > 0) loadOptions.activeTrackIds = [1];
+
   await new Promise<void>((resolve, reject) => {
-    player.load(media, { autoplay: true }, (err) => (err ? reject(err) : resolve()));
+    player.load(
+      media,
+      loadOptions as { autoplay: boolean },
+      (err) => (err ? reject(err) : resolve()),
+    );
   });
 
   const sessionId = randomUUID();

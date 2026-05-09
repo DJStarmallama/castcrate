@@ -137,6 +137,9 @@ export const api = {
     title: string;
     posterUrl?: string;
     contentType?: string;
+    subtitlePath?: string;
+    subtitleLanguage?: string;
+    subtitleName?: string;
   }) =>
     request<{ sessionId: string; streamUrl: string }>("/api/cast/play", {
       method: "POST",
@@ -151,6 +154,15 @@ export const api = {
     }),
   castSession: (sessionId: string) =>
     request<CastSessionStatus>(`/api/cast/sessions/${sessionId}`),
+  subtitleTracks: (infoHash: string) =>
+    request<{ tracks: SubtitleTrack[] }>(`/stream/${infoHash}/subtitles`),
 };
+
+export interface SubtitleTrack {
+  index: number;
+  fileName: string;
+  language: string;
+  ext: ".srt" | ".vtt";
+}
 
 export { ApiError };

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import type { CastDevice } from "@castcrate/shared";
-import { api } from "../lib/api";
+import { api, type SubtitleTrack } from "../lib/api";
 
 interface Props {
   streamPath: string;
@@ -10,6 +10,8 @@ interface Props {
   contentType?: string;
   onSessionChange: (sessionId: string | null) => void;
   sessionId: string | null;
+  subtitle?: SubtitleTrack | null;
+  infoHash?: string;
 }
 
 export function CastBar({
@@ -19,6 +21,8 @@ export function CastBar({
   contentType,
   onSessionChange,
   sessionId,
+  subtitle,
+  infoHash,
 }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -37,6 +41,13 @@ export function CastBar({
         title,
         ...(posterUrl ? { posterUrl } : {}),
         ...(contentType ? { contentType } : {}),
+        ...(subtitle && infoHash
+          ? {
+              subtitlePath: `/stream/${infoHash}/subtitles/${subtitle.index}`,
+              subtitleLanguage: subtitle.language,
+              subtitleName: subtitle.language,
+            }
+          : {}),
       }),
     onSuccess: (data) => {
       onSessionChange(data.sessionId);

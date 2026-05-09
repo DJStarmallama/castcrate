@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { MovieDetails } from "@castcrate/shared";
-import { api, type StartTorrentResult } from "../lib/api";
+import { api, type StartTorrentResult, type SubtitleTrack } from "../lib/api";
 import { formatBitsPerSec, formatPercent } from "../lib/format";
 import { CastBar } from "./CastBar";
 import { CastControls } from "./CastControls";
+import { SubtitlePicker } from "./SubtitlePicker";
 import { useLocalState } from "../hooks/useLocalState";
 import { SMOOTH_PLAYBACK_KEY } from "./Settings";
 
@@ -19,6 +20,7 @@ export function Player({ movie, session, onClose }: Props) {
   const [closing, setClosing] = useState(false);
   const [smooth] = useLocalState(SMOOTH_PLAYBACK_KEY, false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [subtitle, setSubtitle] = useState<SubtitleTrack | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -97,6 +99,11 @@ export function Player({ movie, session, onClose }: Props) {
             Smooth
           </span>
         )}
+        <SubtitlePicker
+          infoHash={session.infoHash}
+          selected={subtitle}
+          onSelect={setSubtitle}
+        />
         <CastBar
           streamPath={playUrl}
           title={movie.title}
@@ -104,6 +111,8 @@ export function Player({ movie, session, onClose }: Props) {
           contentType={contentType}
           sessionId={castSessionId}
           onSessionChange={setCastSessionId}
+          subtitle={subtitle}
+          infoHash={session.infoHash}
         />
         {!isCasting && (
           <button
@@ -133,11 +142,24 @@ export function Player({ movie, session, onClose }: Props) {
         ) : (
           <video
             ref={videoRef}
+            // Force a fresh element when the subtitle track changes —
+            // <video> caches text tracks aggressively otherwise.
+            key={subtitle ? `${session.infoHash}-${subtitle.index}` : session.infoHash}
             src={playUrl}
             controls
             autoPlay
+            crossOrigin="anonymous"
             className="h-full max-h-full w-full max-w-full"
-          />
+          >
+            {subtitle && (
+              <track
+                kind="subtitles"
+                src={`/stream/${session.infoHash}/subtitles/${subtitle.index}`}
+                label={subtitle.language}
+                default
+              />
+            )}
+          </video>
         )}
       </div>
       <footer className="border-t border-zinc-900 bg-zinc-950 px-6 py-3">

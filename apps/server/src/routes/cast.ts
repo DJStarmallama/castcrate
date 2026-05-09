@@ -21,6 +21,9 @@ interface PlayBody {
   title?: string;
   posterUrl?: string;
   contentType?: string;
+  subtitlePath?: string;
+  subtitleLanguage?: string;
+  subtitleName?: string;
 }
 
 interface ControlBody {
@@ -33,7 +36,16 @@ export async function castRoutes(app: FastifyInstance) {
   app.get("/api/cast/devices", async () => ({ devices: listDevices() }));
 
   app.post<{ Body: PlayBody }>("/api/cast/play", async (req, reply) => {
-    const { deviceId, streamPath, title, posterUrl, contentType } = req.body ?? {};
+    const {
+      deviceId,
+      streamPath,
+      title,
+      posterUrl,
+      contentType,
+      subtitlePath,
+      subtitleLanguage,
+      subtitleName,
+    } = req.body ?? {};
     if (!deviceId || !streamPath || !title) {
       return reply.code(400).send({
         error: "deviceId, streamPath, and title are required",
@@ -54,6 +66,15 @@ export async function castRoutes(app: FastifyInstance) {
         ...(posterUrl ? { posterUrl } : {}),
         ...(contentType ? { contentType } : {}),
       };
+      if (subtitlePath) {
+        params.tracks = [
+          {
+            url: `http://${ip}:${config.port}${subtitlePath}`,
+            language: subtitleLanguage ?? "und",
+            name: subtitleName ?? "Subtitles",
+          },
+        ];
+      }
       const result = await play(params);
       return { ...result, streamUrl };
     } catch (err) {
