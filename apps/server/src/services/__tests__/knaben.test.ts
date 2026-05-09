@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { _internals, episodeMatchesTitle } from "../knaben.js";
+import {
+  _internals,
+  episodeMatchesTitle,
+  seasonPackMatchesTitle,
+} from "../knaben.js";
 
 const baseHit = {
   id: "abc",
@@ -42,6 +46,30 @@ describe("episodeMatchesTitle", () => {
   it("matches non-zero-padded S/E forms (S1E5)", () => {
     expect(episodeMatchesTitle("Show.S1E5.DVDRip", 1, 5)).toBe(true);
     expect(episodeMatchesTitle("Show.1x5.WEB", 1, 5)).toBe(true);
+  });
+});
+
+describe("seasonPackMatchesTitle", () => {
+  it("matches Show.S01.COMPLETE", () => {
+    expect(seasonPackMatchesTitle("Show.S01.COMPLETE.1080p.x264", 1)).toBe(true);
+  });
+  it("matches non-zero-padded S1", () => {
+    expect(seasonPackMatchesTitle("Show.S1.PROPER", 1)).toBe(true);
+  });
+  it("matches Season 1 verbose form", () => {
+    expect(seasonPackMatchesTitle("Show Season 1 1080p", 1)).toBe(true);
+  });
+  it("matches Season.1 dot form", () => {
+    expect(seasonPackMatchesTitle("Show.Season.1.WEB", 1)).toBe(true);
+  });
+  it("rejects single-episode releases", () => {
+    expect(seasonPackMatchesTitle("Show.S01E05.1080p", 1)).toBe(false);
+    expect(seasonPackMatchesTitle("Show.S01.E05", 1)).toBe(false);
+    expect(seasonPackMatchesTitle("Show.1x05.WEB", 1)).toBe(false);
+  });
+  it("rejects different season", () => {
+    expect(seasonPackMatchesTitle("Show.S02.COMPLETE", 1)).toBe(false);
+    expect(seasonPackMatchesTitle("Show Season 2 WEB", 1)).toBe(false);
   });
 });
 

@@ -60,7 +60,7 @@ Each item is feature-sized; spawn `/start-feature` when ready.
 - [ ] **E2.** Auto-transcode trigger from codec probe (HEVC, AV1, high-bitrate)
 - [ ] **E3.** Manual file picker for multi-file torrents
 - [ ] **E4.** Editable settings (PATCH `/api/settings` → `~/.castcrate/settings.json`)
-- [ ] **E5.** Knaben season-pack search path
+- [x] **E5.** Knaben season-pack search path — `searchKnabenSeasonPack()` + `seasonPackMatchesTitle()`; wired into `/api/search/torrents/episode` when EZTV pack is empty
 - [ ] **E6.** Per-indexer DNS-bypass scoping
 
 ---

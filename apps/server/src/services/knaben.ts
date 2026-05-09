@@ -98,6 +98,26 @@ function toResult(hit: KnabenHit): TorrentResult | null {
   };
 }
 
+// True for season-pack release names: "Show.S01.COMPLETE", "Show.Season.1.WEB",
+// "Show.S1.PROPER" — anything that names a season but not a specific episode.
+// Word boundaries make `\bS01\b` reject `S01E05` (E is a word char).
+export function seasonPackMatchesTitle(title: string, season: number): boolean {
+  const sxx = String(season).padStart(2, "0");
+  const sxRaw = String(season);
+  const seasonPatterns = [
+    new RegExp(`\\bS${sxx}\\b`, "i"),
+    new RegExp(`\\bS${sxRaw}\\b`, "i"),
+    new RegExp(`\\bSeason\\.?\\s*${season}\\b`, "i"),
+  ];
+  // Reject explicit episode tags like S01.E05 or 1x05 that the season
+  // regex wouldn't catch on its own.
+  const episodePatterns = [/\bE\d+\b/i, /\b\d+x\d+\b/];
+  return (
+    seasonPatterns.some((p) => p.test(title)) &&
+    !episodePatterns.some((p) => p.test(title))
+  );
+}
+
 export function episodeMatchesTitle(
   title: string,
   season: number,
@@ -149,6 +169,39 @@ export async function searchKnabenEpisode(
     // Force the S/E since Knaben might not have tagged them
     r.season = season;
     r.episode = episode;
+    results.push(r);
+  }
+  results.sort(rankTorrent);
+  cache.set(key, results);
+  return results;
+}
+
+export async function searchKnabenSeasonPack(
+  seriesTitle: string,
+  season: number,
+): Promise<TorrentResult[]> {
+  const key = `pack::${seriesTitle.toLowerCase()}::${season}`;
+  const cached = cache.get(key);
+  if (cached) return cached;
+
+  const sTag = `S${String(season).padStart(2, "0")}`;
+  const data = await postKnaben({
+    query: `${seriesTitle} ${sTag} COMPLETE`,
+    search_type: "score",
+    search_field: "title",
+    size: 30,
+    hide_xxx: true,
+    order_by: "seeders",
+    order_direction: "desc",
+  });
+
+  const results: TorrentResult[] = [];
+  for (const hit of data.hits ?? []) {
+    if (!seasonPackMatchesTitle(hit.title, season)) continue;
+    const r = toResult(hit);
+    if (!r) continue;
+    r.season = season;
+    delete r.episode;
     results.push(r);
   }
   results.sort(rankTorrent);

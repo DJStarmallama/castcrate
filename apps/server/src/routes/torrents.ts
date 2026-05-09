@@ -4,7 +4,11 @@ import { extname } from "node:path";
 import type { TorrentResult } from "@castcrate/shared";
 import { searchTorrents } from "../services/yts.js";
 import { searchEpisode, searchSeasonPack } from "../services/eztv.js";
-import { searchKnabenEpisode, searchKnabenMovie } from "../services/knaben.js";
+import {
+  searchKnabenEpisode,
+  searchKnabenMovie,
+  searchKnabenSeasonPack,
+} from "../services/knaben.js";
 import {
   startTorrent,
   getStatus,
@@ -130,11 +134,20 @@ export async function torrentRoutes(app: FastifyInstance) {
     }
 
     if (episodeResults.length === 0 && title) {
+      if (!tried.includes("knaben")) tried.push("knaben");
       try {
-        tried.push("knaben");
         episodeResults = await searchKnabenEpisode(title, season, episode);
       } catch (err) {
-        errors.push(`knaben: ${(err as Error).message}`);
+        errors.push(`knaben (episode): ${(err as Error).message}`);
+      }
+    }
+
+    if (packResults.length === 0 && title) {
+      if (!tried.includes("knaben")) tried.push("knaben");
+      try {
+        packResults = await searchKnabenSeasonPack(title, season);
+      } catch (err) {
+        errors.push(`knaben (pack): ${(err as Error).message}`);
       }
     }
 
