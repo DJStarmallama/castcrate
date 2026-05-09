@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { CastAction } from "@castcrate/shared";
 import { listDevices } from "./discovery.js";
+import { broadcast } from "./events.js";
 
 interface DefaultMediaReceiver {
   on(event: "status" | "close", cb: (...args: unknown[]) => void): void;
@@ -177,11 +178,13 @@ export async function play(params: PlayParams): Promise<{ sessionId: string }> {
         session.volumeLevel = status.volume.level;
       if (typeof status.volume.muted === "boolean") session.muted = status.volume.muted;
     }
+    broadcast({ type: "cast:status", session: serialiseSession(session) });
   });
 
   player.on("close", () => {
     session.status = "stopped";
     sessions.delete(sessionId);
+    broadcast({ type: "cast:closed", sessionId });
   });
 
   return { sessionId };
@@ -222,9 +225,7 @@ export async function control(
 
 import type { CastSessionStatus } from "@castcrate/shared";
 
-export function getSession(sessionId: string): CastSessionStatus | null {
-  const s = sessions.get(sessionId);
-  if (!s) return null;
+function serialiseSession(s: Session): CastSessionStatus {
   return {
     sessionId: s.sessionId,
     deviceId: s.deviceId,
@@ -234,6 +235,12 @@ export function getSession(sessionId: string): CastSessionStatus | null {
     volumeLevel: s.volumeLevel,
     muted: s.muted,
   };
+}
+
+export function getSession(sessionId: string): CastSessionStatus | null {
+  const s = sessions.get(sessionId);
+  if (!s) return null;
+  return serialiseSession(s);
 }
 
 export async function shutdownCast(): Promise<void> {

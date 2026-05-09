@@ -1,7 +1,7 @@
 # hardening — Task checklist
 
-**Last updated:** 2026-05-09
-**Progress:** Phases A–D complete — 4 / 5 ship-able phases (Phase E remains deferred)
+**Last updated:** 2026-05-10
+**Progress:** Phases A–E complete — every hardening item shipped.
 
 ---
 
@@ -56,7 +56,7 @@
 
 Each item is feature-sized; spawn `/start-feature` when ready.
 
-- [ ] **E1.** WebSocket push for cast + torrent state
+- [x] **E1.** WebSocket push for cast + torrent state — `services/events.ts` socket registry + 1s torrent broadcaster, `routes/ws.ts` `/ws` endpoint, cast.ts emits `cast:status`/`cast:closed` on every receiver event. Client `useWsBridge` hydrates the TanStack Query cache; component polling drops from 1s/1.5s/2s to a 10s safety net.
 - [x] **E2.** Auto-transcode for HEVC/H.265/AV1 — TorrentMeta tracks `videoCodec`, `StartTorrentResult` returns it, Player auto-routes through `/transcoded` when the source codec isn't Chromecast-friendly. User toggle still wins as override.
 - [x] **E3.** Manual file picker — `GET /api/torrent/:hash/files` lists video files; `POST /api/torrent/:hash/file { index }` selects one (deselects others, raises priority on the new pick). Player renders a `<select>` in the header for multi-file torrents and re-keys the `<video>` so the new file streams immediately.
 - [x] **E4.** Editable settings — `services/settings.ts` layered (env defaults + `~/.castcrate/settings.json` overrides, atomic write); `GET /api/settings`, `PATCH /api/settings` for `bufferPercent`, `transcodeBufferPercent`, `transcodeBitrate`. Transcoder now reads bitrate live; Settings UI has editable form with Save button.

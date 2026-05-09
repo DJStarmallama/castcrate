@@ -15,7 +15,9 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
   const session = useQuery({
     queryKey: ["cast-session", sessionId],
     queryFn: () => api.castSession(sessionId),
-    refetchInterval: 1000,
+    // WebSocket bridge pushes cast:status events into this cache key.
+    // Slow safety-net poll covers the case where the WS drops.
+    refetchInterval: 10_000,
   });
 
   const ctrl = useMutation({

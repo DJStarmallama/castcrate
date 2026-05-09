@@ -34,8 +34,10 @@ export function Player({ movie, session, onClose }: Props) {
   const status = useQuery({
     queryKey: ["torrent-status", session.infoHash],
     queryFn: () => api.torrentStatus(session.infoHash),
-    // Poll every 1.5s while still downloading; stop polling once done.
-    refetchInterval: (q) => (q.state.data?.done ? false : 1500),
+    // The WebSocket bridge pushes torrent status into this cache key
+    // every ~1s. We keep a slow safety-net poll so the UI recovers if the
+    // WS drops. Stops entirely once the torrent finishes.
+    refetchInterval: (q) => (q.state.data?.done ? false : 10_000),
     enabled: !closing,
   });
 

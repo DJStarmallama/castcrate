@@ -15,7 +15,9 @@ export function Library({ onClose }: Props) {
   const active = useQuery({
     queryKey: ["torrents-active"],
     queryFn: () => api.listTorrents(),
-    refetchInterval: 2000,
+    // WebSocket bridge keeps this cache fresh in real time. The 10s
+    // poll is a safety net in case the WS is offline.
+    refetchInterval: 10_000,
   });
   const history = useQuery({
     queryKey: ["history"],

@@ -19,6 +19,7 @@ import { Settings } from "./components/Settings";
 import { Theatre } from "./components/Theatre";
 import { useDebounced } from "./hooks/useDebounced";
 import { useGlobalShortcut } from "./hooks/useGlobalShortcut";
+import { useWsBridge } from "./hooks/useWsBridge";
 import { api, ApiError, type StartTorrentResult } from "./lib/api";
 
 interface SelectedItem {
@@ -47,6 +48,9 @@ export default function App() {
   const [typeFilter, setTypeFilter] = useState<"all" | "movie" | "series">("all");
   const searchRef = useRef<HTMLInputElement>(null);
   const debounced = useDebounced(query, 300);
+  // Stream torrent + cast state pushes from /ws into the TanStack Query cache.
+  // REST endpoints remain as the slow-poll fallback when the WS drops.
+  useWsBridge();
 
   useGlobalShortcut({ key: "k", meta: true }, (e) => {
     e.preventDefault();

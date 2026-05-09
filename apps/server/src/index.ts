@@ -21,16 +21,25 @@ const { shutdownCast } = await import("./services/cast.js");
 const { shutdownTranscodes } = await import("./services/transcoder.js");
 const { initSettings } = await import("./services/settings.js");
 await initSettings();
+const fastifyWebsocket = (await import("@fastify/websocket")).default;
+const { wsRoutes } = await import("./routes/ws.js");
+const { startBroadcasters, stopBroadcasters } = await import(
+  "./services/events.js"
+);
 
 const app = Fastify({ logger: true });
 
 await app.register(cors, { origin: true });
+await app.register(fastifyWebsocket);
+await app.register(wsRoutes);
 await app.register(healthRoutes);
 await app.register(moviesRoutes);
 await app.register(torrentRoutes);
 await app.register(castRoutes);
 await app.register(historyRoutes);
 await app.register(subtitleRoutes);
+
+startBroadcasters();
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webDist = join(here, "../../web/dist");
@@ -49,6 +58,7 @@ if (existsSync(webDist)) {
 startDiscovery();
 
 app.addHook("onClose", async () => {
+  stopBroadcasters();
   stopDiscovery();
   await shutdownCast();
   await shutdownTranscodes();
