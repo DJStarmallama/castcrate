@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { MovieDetails } from "@castcrate/shared";
 import { api, type StartTorrentResult } from "../lib/api";
@@ -26,14 +26,11 @@ export function Player({ movie, session, onClose }: Props) {
     enabled: !closing,
   });
 
-  useEffect(() => {
-    return () => {
-      if (!closing) {
-        api.removeTorrent(session.infoHash).catch(() => {});
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Note: torrent removal happens explicitly in handleClose. We don't run
+  // a cleanup-on-unmount effect because React StrictMode would fire it on
+  // the very first render (mount → unmount → mount), killing the torrent
+  // before it ever gets bytes. If the tab is closed unexpectedly, the user
+  // can clean up from the Library tab.
 
   const handleClose = async () => {
     setClosing(true);
