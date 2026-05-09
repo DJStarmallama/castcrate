@@ -19,6 +19,8 @@ const { shutdown } = await import("./services/torrent.js");
 const { startDiscovery, stopDiscovery } = await import("./services/discovery.js");
 const { shutdownCast } = await import("./services/cast.js");
 const { shutdownTranscodes } = await import("./services/transcoder.js");
+const { initSettings } = await import("./services/settings.js");
+await initSettings();
 
 const app = Fastify({ logger: true });
 

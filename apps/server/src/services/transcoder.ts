@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Readable } from "node:stream";
 import { config } from "../lib/config.js";
+import { getSettings } from "./settings.js";
 
 const execFileP = promisify(execFile);
 
@@ -47,15 +48,18 @@ export interface TranscodeHandle {
  * and calling `process.kill()` on client disconnect.
  */
 export function spawnTranscode(source: Readable): TranscodeHandle {
+  // Read bitrate from runtime settings so the user can edit it live in the
+  // Settings UI without restarting the server.
+  const bitrate = getSettings().transcodeBitrate;
   const args = [
     "-hide_banner",
     "-loglevel", "error",
     "-i", "pipe:0",
     "-c:v", "libx264",
     "-preset", "veryfast",
-    "-b:v", config.transcodeBitrate,
-    "-maxrate", config.transcodeBitrate,
-    "-bufsize", `${parseBitrateMultiplier(config.transcodeBitrate, 2)}`,
+    "-b:v", bitrate,
+    "-maxrate", bitrate,
+    "-bufsize", `${parseBitrateMultiplier(bitrate, 2)}`,
     "-pix_fmt", "yuv420p",
     "-c:a", "aac",
     "-b:a", "192k",

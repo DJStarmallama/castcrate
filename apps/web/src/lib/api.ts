@@ -83,6 +83,12 @@ export interface SystemCheck {
   };
 }
 
+export interface RuntimeSettings {
+  bufferPercent: number;
+  transcodeBufferPercent: number;
+  transcodeBitrate: string;
+}
+
 export const api = {
   search: (q: string, type?: "movie" | "series") => {
     const url = new URL("/api/search", window.location.origin);
@@ -138,6 +144,13 @@ export const api = {
   history: () => request<{ entries: HistoryEntry[] }>("/api/history"),
   clearHistory: () => request<void>("/api/history", { method: "DELETE" }),
   systemCheck: () => request<SystemCheck>("/api/system/check"),
+  getSettings: () => request<RuntimeSettings>("/api/settings"),
+  updateSettings: (body: Partial<RuntimeSettings>) =>
+    request<RuntimeSettings>("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   torrentStatus: (infoHash: string) =>
     request<TorrentStatus>(`/api/torrent/${infoHash}`),
   torrentFiles: (infoHash: string) =>
