@@ -29,9 +29,32 @@ export function Player({ movie, session, onClose }: Props) {
   const status = useQuery({
     queryKey: ["torrent-status", session.infoHash],
     queryFn: () => api.torrentStatus(session.infoHash),
-    refetchInterval: 1500,
+    // Poll every 1.5s while still downloading; stop polling once done.
+    refetchInterval: (q) => (q.state.data?.done ? false : 1500),
     enabled: !closing,
   });
+
+  // Detect a stalled stream — progress hasn't budged in STALL_THRESHOLD_MS
+  // while still downloading. Used in the footer to surface "no peers" UX.
+  const lastProgressRef = useRef<{ value: number; time: number }>({
+    value: 0,
+    time: Date.now(),
+  });
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    const data = status.data;
+    if (!data) return;
+    const now = Date.now();
+    if (data.progress !== lastProgressRef.current.value) {
+      lastProgressRef.current = { value: data.progress, time: now };
+      if (stalled) setStalled(false);
+    } else if (
+      !data.done &&
+      now - lastProgressRef.current.time > STALL_THRESHOLD_MS
+    ) {
+      if (!stalled) setStalled(true);
+    }
+  }, [status.data, stalled]);
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
@@ -169,6 +192,7 @@ export function Player({ movie, session, onClose }: Props) {
             speed={status.data.downloadSpeed}
             peers={status.data.numPeers}
             done={status.data.done}
+            stalled={stalled}
           />
         ) : (
           <p className="text-xs text-zinc-500">Waiting for peers…</p>
@@ -183,29 +207,39 @@ function ProgressBar({
   speed,
   peers,
   done,
+  stalled,
 }: {
   progress: number;
   speed: number;
   peers: number;
   done: boolean;
+  stalled: boolean;
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between text-xs text-zinc-500">
-        <span>
-          {done ? "complete" : formatPercent(progress)} · {peers} peer{peers === 1 ? "" : "s"}
+      <div className="flex items-center justify-between text-xs">
+        <span className={stalled ? "text-amber-400" : "text-zinc-500"}>
+          {done
+            ? "complete"
+            : stalled
+              ? `stalled — no bytes received (${peers} peer${peers === 1 ? "" : "s"})`
+              : `${formatPercent(progress)} · ${peers} peer${peers === 1 ? "" : "s"}`}
         </span>
-        <span>{done ? "" : formatBitsPerSec(speed)}</span>
+        <span className="text-zinc-500">{done ? "" : formatBitsPerSec(speed)}</span>
       </div>
       <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-900">
         <div
-          className={`h-full ${done ? "bg-emerald-500" : "bg-emerald-400"}`}
+          className={`h-full ${
+            done ? "bg-emerald-500" : stalled ? "bg-amber-500" : "bg-emerald-400"
+          }`}
           style={{ width: `${Math.max(2, progress * 100)}%` }}
         />
       </div>
     </div>
   );
 }
+
+const STALL_THRESHOLD_MS = 10_000;
 
 function FullscreenIcon() {
   return (

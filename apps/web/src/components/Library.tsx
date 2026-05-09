@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ActiveTorrent, HistoryEntry } from "../lib/api";
 import { api } from "../lib/api";
@@ -22,7 +23,8 @@ export function Library({ onClose }: Props) {
   });
 
   const removeOne = useMutation({
-    mutationFn: (infoHash: string) => api.removeTorrent(infoHash),
+    mutationFn: ({ infoHash, destroy }: { infoHash: string; destroy: boolean }) =>
+      api.removeTorrent(infoHash, { destroy }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["torrents-active"] });
       qc.invalidateQueries({ queryKey: ["history"] });
@@ -63,7 +65,9 @@ export function Library({ onClose }: Props) {
             <ActiveRow
               key={t.infoHash}
               torrent={t}
-              onRemove={() => removeOne.mutate(t.infoHash)}
+              onRemove={(destroy) =>
+                removeOne.mutate({ infoHash: t.infoHash, destroy })
+              }
             />
           ))}
         </Section>
@@ -125,8 +129,9 @@ function ActiveRow({
   onRemove,
 }: {
   torrent: ActiveTorrent;
-  onRemove: () => void;
+  onRemove: (destroy: boolean) => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
   return (
     <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
       <div className="h-14 w-10 flex-shrink-0 overflow-hidden rounded bg-zinc-900">
@@ -149,12 +154,38 @@ function ActiveRow({
           />
         </div>
       </div>
-      <button
-        onClick={onRemove}
-        className="rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-700"
-      >
-        Remove
-      </button>
+      {confirming ? (
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => onRemove(false)}
+            title="Stop downloading; keep the file on disk"
+            className="rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-700"
+          >
+            Stop only
+          </button>
+          <button
+            onClick={() => onRemove(true)}
+            title="Stop and delete downloaded files from disk"
+            className="rounded-full bg-red-500/90 px-3 py-1 text-xs text-black hover:bg-red-400"
+          >
+            Stop &amp; delete
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            aria-label="Cancel"
+            className="rounded-full bg-zinc-900 px-2 py-1 text-xs text-zinc-500 hover:text-zinc-200"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          className="rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-700"
+        >
+          Remove
+        </button>
+      )}
     </div>
   );
 }

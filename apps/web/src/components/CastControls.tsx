@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { MovieDetails } from "@castcrate/shared";
 import { api } from "../lib/api";
@@ -40,6 +41,35 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
   const volumeLevel = data?.volumeLevel ?? 1;
   const muted = data?.muted ?? false;
 
+  // Optimistic UI: render the user's drag immediately, then yield back to
+  // server state when the next 1s poll catches up (or after 3s as a safety net).
+  const [optimisticSeek, setOptimisticSeek] = useState<number | null>(null);
+  const [optimisticVolume, setOptimisticVolume] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (optimisticSeek === null) return;
+    if (Math.abs(currentTime - optimisticSeek) < 2) setOptimisticSeek(null);
+  }, [currentTime, optimisticSeek]);
+  useEffect(() => {
+    if (optimisticSeek === null) return;
+    const t = setTimeout(() => setOptimisticSeek(null), 3000);
+    return () => clearTimeout(t);
+  }, [optimisticSeek]);
+
+  useEffect(() => {
+    if (optimisticVolume === null) return;
+    if (Math.abs((muted ? 0 : volumeLevel) - optimisticVolume) < 0.05)
+      setOptimisticVolume(null);
+  }, [volumeLevel, muted, optimisticVolume]);
+  useEffect(() => {
+    if (optimisticVolume === null) return;
+    const t = setTimeout(() => setOptimisticVolume(null), 3000);
+    return () => clearTimeout(t);
+  }, [optimisticVolume]);
+
+  const displayTime = optimisticSeek ?? currentTime;
+  const displayVolume = optimisticVolume ?? (muted ? 0 : volumeLevel);
+
   return (
     <div className="flex max-w-2xl flex-col items-center gap-6 p-12 text-center">
       {movie.poster && (
@@ -63,14 +93,18 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
           min={0}
           max={duration || 0}
           step={1}
-          value={Math.floor(currentTime)}
-          onChange={(e) => ctrl.mutate({ action: "seek", value: Number(e.target.value) })}
+          value={Math.floor(displayTime)}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setOptimisticSeek(v);
+            ctrl.mutate({ action: "seek", value: v });
+          }}
           disabled={disableSeek || duration === 0}
           aria-label="Seek"
           className="w-full accent-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
         />
         <div className="mt-1 flex justify-between text-xs text-zinc-500">
-          <span>{formatTime(currentTime)}</span>
+          <span>{formatTime(displayTime)}</span>
           <span>{disableSeek ? "seek disabled (transcoding)" : ""}</span>
           <span>{formatTime(duration)}</span>
         </div>
@@ -79,9 +113,11 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
       {/* Transport row */}
       <div className="flex items-center gap-3">
         <IconButton
-          onClick={() =>
-            ctrl.mutate({ action: "seek", value: Math.max(0, currentTime - 10) })
-          }
+          onClick={() => {
+            const v = Math.max(0, displayTime - 10);
+            setOptimisticSeek(v);
+            ctrl.mutate({ action: "seek", value: v });
+          }}
           disabled={disableSeek}
           title="Skip back 10s"
         >
@@ -95,12 +131,11 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
           {isPaused ? <Play /> : <Pause />}
         </button>
         <IconButton
-          onClick={() =>
-            ctrl.mutate({
-              action: "seek",
-              value: Math.min(duration || currentTime + 10, currentTime + 10),
-            })
-          }
+          onClick={() => {
+            const v = Math.min(duration || displayTime + 10, displayTime + 10);
+            setOptimisticSeek(v);
+            ctrl.mutate({ action: "seek", value: v });
+          }}
           disabled={disableSeek}
           title="Skip forward 10s"
         >
@@ -121,10 +156,12 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
           min={0}
           max={1}
           step={0.05}
-          value={muted ? 0 : volumeLevel}
-          onChange={(e) =>
-            ctrl.mutate({ action: "volume", value: Number(e.target.value) })
-          }
+          value={displayVolume}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setOptimisticVolume(v);
+            ctrl.mutate({ action: "volume", value: v });
+          }}
           aria-label="Volume"
           className="flex-1 accent-emerald-500"
         />

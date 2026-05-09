@@ -138,8 +138,11 @@ export const api = {
   systemCheck: () => request<SystemCheck>("/api/system/check"),
   torrentStatus: (infoHash: string) =>
     request<TorrentStatus>(`/api/torrent/${infoHash}`),
-  removeTorrent: (infoHash: string) =>
-    request<void>(`/api/torrent/${infoHash}`, { method: "DELETE" }),
+  removeTorrent: (infoHash: string, opts: { destroy?: boolean } = {}) => {
+    const url = new URL(`/api/torrent/${infoHash}`, window.location.origin);
+    if (opts.destroy) url.searchParams.set("destroy", "1");
+    return request<void>(url.pathname + url.search, { method: "DELETE" });
+  },
   castDevices: () => request<{ devices: CastDevice[] }>("/api/cast/devices"),
   castPlay: (body: {
     deviceId: string;

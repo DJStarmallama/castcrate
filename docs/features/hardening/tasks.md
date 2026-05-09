@@ -1,7 +1,7 @@
 # hardening — Task checklist
 
 **Last updated:** 2026-05-09
-**Progress:** Phases A+B complete — 2 / 5 phases
+**Progress:** Phases A+B+C complete — 3 / 5 phases
 
 ---
 
@@ -29,14 +29,14 @@
 
 ---
 
-## Phase C — UX polish
+## Phase C — UX polish ✅
 
-- [ ] **C1.** "Stop only" vs "Stop & delete files" prompt on torrent removal in `Library.tsx`; wire `?destroy=true` to `DELETE /api/torrent/:hash`; forward `{ destroyStore: true }` to WebTorrent
-- [ ] **C2.** Optimistic UI for seek/volume in `CastControls.tsx` — local state updates immediately, reconciles on next poll
-- [ ] **C3.** Stalled-stream warning in `Player.tsx` when `progress` unchanged for 10s while `!done`
-- [ ] **C4.** Stop-or-slow status polling once `done === true` in `Player.tsx` (drop to 30s or unsubscribe)
+- [x] **C1.** Inline confirm in `Library.tsx` ActiveRow: "Stop only" / "Stop & delete" / cancel ✕; `api.removeTorrent(infoHash, { destroy })` passes `?destroy=1`; `removeTorrent` in `services/torrent.ts` forwards `{ destroyStore }` to WebTorrent
+- [x] **C2.** `optimisticSeek` and `optimisticVolume` state in `CastControls.tsx`; reconciles when server poll catches up (within 2s for seek, 0.05 for volume) or after a 3s safety net
+- [x] **C3.** `STALL_THRESHOLD_MS = 10_000`; ref tracks last progress change; ProgressBar renders amber warning copy + amber bar when stalled
+- [x] **C4.** `refetchInterval: (q) => q.state.data?.done ? false : 1500` — polling stops once the torrent finishes
 
-**Acceptance:** Manual smoke test for each item.
+**Acceptance:** ✅ `pnpm typecheck` clean; `pnpm test` 54/54. Manual smoke test still required for each (UI behaviour).
 
 ---
 

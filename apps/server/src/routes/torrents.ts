@@ -211,9 +211,14 @@ export async function torrentRoutes(app: FastifyInstance) {
     },
   );
 
-  app.delete<{ Params: { infoHash: string } }>(
+  app.delete<{
+    Params: { infoHash: string };
+    Querystring: { destroy?: string };
+  }>(
     "/api/torrent/:infoHash",
     async (req, reply) => {
+      const destroyStore =
+        req.query.destroy === "1" || req.query.destroy === "true";
       try {
         const status = await getStatus(req.params.infoHash);
         const m = getMeta(req.params.infoHash);
@@ -252,7 +257,7 @@ export async function torrentRoutes(app: FastifyInstance) {
             });
           }
         }
-        await removeTorrent(req.params.infoHash);
+        await removeTorrent(req.params.infoHash, { destroyStore });
         return reply.code(204).send();
       } catch (err) {
         const msg = err instanceof Error ? err.message : "failed to remove";

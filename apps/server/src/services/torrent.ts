@@ -36,7 +36,11 @@ interface WtClient {
     cb: (torrent: WtTorrent) => void,
   ): WtTorrent;
   get(infoHash: string): WtTorrent | null | Promise<WtTorrent | null>;
-  remove(infoHash: string, cb?: (err?: Error) => void): void;
+  remove(
+    infoHash: string,
+    opts: { destroyStore?: boolean },
+    cb?: (err?: Error) => void,
+  ): void;
   destroy(cb?: () => void): void;
   torrents: WtTorrent[];
 }
@@ -206,11 +210,16 @@ export async function getStatus(infoHash: string): Promise<TorrentStatus | null>
   };
 }
 
-export async function removeTorrent(infoHash: string): Promise<void> {
+export async function removeTorrent(
+  infoHash: string,
+  opts: { destroyStore?: boolean } = {},
+): Promise<void> {
   const client = await getClient();
   meta.delete(infoHash);
   return new Promise((resolve, reject) => {
-    client.remove(infoHash, (err) => (err ? reject(err) : resolve()));
+    client.remove(infoHash, { destroyStore: opts.destroyStore }, (err) =>
+      err ? reject(err) : resolve(),
+    );
   });
 }
 
