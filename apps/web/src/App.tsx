@@ -55,7 +55,9 @@ export default function App() {
   const search = useQuery({
     queryKey: ["search", debounced],
     queryFn: () => api.search(debounced),
-    enabled: debounced.trim().length > 0,
+    // OMDb requires ≥3 chars for meaningful results — anything shorter
+    // either errors with "Too many results" or wastes our quota.
+    enabled: debounced.trim().length >= 3,
   });
 
   const start = useMutation({
@@ -165,7 +167,7 @@ export default function App() {
 
       <section className="mt-12">
         {search.isError && <SearchError err={search.error} />}
-        {search.isPending && debounced.trim() && (
+        {search.isFetching && debounced.trim().length >= 3 && (
           <div className="text-center text-zinc-500">Searching…</div>
         )}
         {search.data && (
@@ -176,9 +178,14 @@ export default function App() {
             }
           />
         )}
-        {search.data && search.data.results.length === 0 && debounced.trim() && (
+        {search.data && search.data.results.length === 0 && (
           <div className="text-center text-zinc-500">
             No results for "{debounced}"
+          </div>
+        )}
+        {debounced.trim().length > 0 && debounced.trim().length < 3 && (
+          <div className="text-center text-sm text-zinc-600">
+            Keep typing — at least 3 characters.
           </div>
         )}
       </section>

@@ -122,8 +122,8 @@ async function omdbFetch<T extends { Response: "True" | "False"; Error?: string 
         401,
       );
     }
-    if (/not found|no.*result/i.test(msg)) {
-      // Empty result is not an error; let the caller handle it.
+    if (/not found|no.*result|too many results/i.test(msg)) {
+      // Mid-typing or genuinely empty — let the caller render empty results.
       return json;
     }
     throw new OmdbError(msg, 502);
