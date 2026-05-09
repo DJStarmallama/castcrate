@@ -16,6 +16,7 @@ import { EpisodePicker } from "./components/EpisodePicker";
 import { Player } from "./components/Player";
 import { Library } from "./components/Library";
 import { Settings } from "./components/Settings";
+import { Theatre } from "./components/Theatre";
 import { useDebounced } from "./hooks/useDebounced";
 import { useGlobalShortcut } from "./hooks/useGlobalShortcut";
 import { api, ApiError, type StartTorrentResult } from "./lib/api";
@@ -129,7 +130,9 @@ export default function App() {
       : null;
 
   return (
-    <main className="mx-auto flex min-h-full max-w-7xl flex-col px-6 py-6">
+    <>
+      <Theatre />
+      <main className="relative z-10 mx-auto flex min-h-full max-w-7xl flex-col px-6 py-6">
       <nav className="flex items-center justify-end gap-2">
         <button
           onClick={() => setShowLibrary(true)}
@@ -154,11 +157,21 @@ export default function App() {
           className={`font-semibold tracking-tight transition-all ${
             showHero ? "text-7xl" : "text-3xl"
           }`}
+          style={{
+            color: "#f7e8b8",
+            textShadow: "0 2px 8px rgba(0,0,0,0.6), 0 0 32px rgba(255, 200, 140, 0.25)",
+            fontFamily: "'Playfair Display', Georgia, serif",
+          }}
         >
-          CastCrate
+          Llama Spit Stream
         </h1>
         {showHero && (
-          <p className="mt-3 text-lg text-zinc-400">Search. Find. Cast.</p>
+          <p
+            className="mt-3 text-lg italic tracking-wide"
+            style={{ color: "#d4b894" }}
+          >
+            Tonight's feature presentation
+          </p>
         )}
         <div className="mt-8 flex w-full justify-center">
           <SearchBar ref={searchRef} value={query} onChange={setQuery} />
@@ -253,7 +266,8 @@ export default function App() {
 
       {showLibrary && <Library onClose={() => setShowLibrary(false)} />}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
-    </main>
+      </main>
+    </>
   );
 }
 

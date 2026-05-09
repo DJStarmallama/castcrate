@@ -1,8 +1,8 @@
-# CastCrate
+# Llama Spit Stream
 
-Locally-hosted web app: search a movie via OMDb, find a YTS torrent, stream it as it downloads, and cast it to a Chromecast on your LAN — all from a single UI on your laptop.
+Locally-hosted web app: search a movie or TV show, find a torrent, stream it as it downloads, and cast it to a Chromecast on your LAN — all from a single UI on your laptop.
 
-See [`castcrate-requirements.md`](./castcrate-requirements.md) for the full PRD and [`castcrate-plan.md`](./castcrate-plan.md) for the phased build plan.
+See [`castcrate-requirements.md`](./castcrate-requirements.md) for the original PRD (under the previous CastCrate codename) and [`castcrate-plan.md`](./castcrate-plan.md) for the phased build plan.
 
 ## What's built
 
@@ -11,8 +11,10 @@ See [`castcrate-requirements.md`](./castcrate-requirements.md) for the full PRD 
 - **Phase 2** — YTS torrent search (x264 1080p preferred, 720p fallback), WebTorrent streaming, in-browser playback with HTTP byte-range
 - **Phase 3** — mDNS Chromecast discovery, `castv2-client` integration, cast/stop/pause/play/seek/volume
 - **Phase 4** — Library view (active downloads + history persisted to `~/.castcrate/history.json`), Settings panel, system check
+- **Phase 5** — TV shows: OMDb series detail with season/episode picker; EZTV adapter for episode + season-pack torrents; "TV" badge in search results
+- **Phase 6** — Real-time transcode (FFmpeg → fragmented MP4 capped at 5 Mbps) for smooth 1080p casting and HEVC playback on older Chromecasts; toggle in Settings
 
-Deferred to v2: x265 / MKV transcoding pipeline (FFmpeg), subtitles, watch history, multi-cast targets.
+Deferred: subtitles, watch history with resume, multi-cast targets, seek-during-transcode.
 
 ## Stack
 

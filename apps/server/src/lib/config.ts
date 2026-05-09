@@ -11,7 +11,7 @@ function expandTilde(p: string): string {
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   omdbApiKey: process.env.OMDB_API_KEY ?? "",
-  downloadPath: expandTilde(process.env.DOWNLOAD_PATH ?? "~/Downloads/CastCrate"),
+  downloadPath: expandTilde(process.env.DOWNLOAD_PATH ?? "~/Downloads/LlamaSpitStream"),
   bufferPercent: Number(process.env.BUFFER_PERCENT ?? 2),
   transcodeBufferPercent: Number(process.env.TRANSCODE_BUFFER_PERCENT ?? 5),
   transcodeBitrate: process.env.TRANSCODE_BITRATE ?? "5M",

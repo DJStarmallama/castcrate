@@ -5,7 +5,7 @@ import { checkFfmpeg } from "../services/transcoder.js";
 export async function healthRoutes(app: FastifyInstance) {
   app.get("/api/ping", async () => ({
     ok: true,
-    service: "castcrate-server",
+    service: "llama-spit-stream-server",
     timestamp: new Date().toISOString(),
   }));
 
