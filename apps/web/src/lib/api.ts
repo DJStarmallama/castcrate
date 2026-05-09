@@ -17,7 +17,7 @@ class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
-    let detail = "";
+    let detail: string;
     try {
       const j = (await res.json()) as { error?: string };
       detail = j.error ?? "";
