@@ -1,5 +1,11 @@
 import { LRUCache } from "lru-cache";
-import type { MovieDetails, MovieSearchResult } from "@castcrate/shared";
+import type {
+  ContentType,
+  MovieDetails,
+  MovieSearchResult,
+  SeriesDetails,
+  SeriesEpisode,
+} from "@castcrate/shared";
 import { config } from "../lib/config.js";
 
 const OMDB_BASE = "http://www.omdbapi.com/";
@@ -48,6 +54,22 @@ interface OmdbDetailResponse {
   imdbRating?: string;
   imdbID: string;
   Type: string;
+  totalSeasons?: string;
+  Response: "True" | "False";
+  Error?: string;
+}
+
+interface OmdbSeasonResponse {
+  Title: string;
+  Season: string;
+  totalSeasons: string;
+  Episodes?: {
+    Title: string;
+    Released: string;
+    Episode: string;
+    imdbRating: string;
+    imdbID: string;
+  }[];
   Response: "True" | "False";
   Error?: string;
 }
@@ -138,9 +160,14 @@ function splitList(s: string | undefined): string[] {
   return s.split(",").map((x) => x.trim()).filter(Boolean);
 }
 
+function normalizeType(t: string): ContentType {
+  return t === "series" ? "series" : "movie";
+}
+
 function searchItemToResult(item: OmdbSearchItem): MovieSearchResult {
   return {
     imdbId: item.imdbID,
+    type: normalizeType(item.Type),
     title: item.Title,
     year: parseYear(item.Year),
     poster: poster(item.Poster),
@@ -153,6 +180,7 @@ function searchItemToResult(item: OmdbSearchItem): MovieSearchResult {
 function detailToResult(d: OmdbDetailResponse): MovieDetails {
   return {
     imdbId: d.imdbID,
+    type: normalizeType(d.Type),
     title: d.Title,
     year: parseYear(d.Year),
     poster: poster(d.Poster),
@@ -164,14 +192,32 @@ function detailToResult(d: OmdbDetailResponse): MovieDetails {
   };
 }
 
-export async function searchMovies(query: string): Promise<MovieSearchResult[]> {
+export async function search(query: string): Promise<MovieSearchResult[]> {
   if (!query.trim()) return [];
-  const data = await omdbFetch<OmdbSearchResponse>({
-    s: query,
-    type: "movie",
-  });
-  if (!data.Search) return [];
-  return data.Search.map(searchItemToResult);
+  // OMDb's basic search returns up to 10 results across all types.
+  // Run a movie pass + series pass and merge so series aren't crowded out.
+  const [movieData, seriesData] = await Promise.all([
+    omdbFetch<OmdbSearchResponse>({ s: query, type: "movie" }).catch((err) => {
+      if (err instanceof OmdbError && err.status === 502 && /no.*result/i.test(err.message))
+        return { Response: "False" } as OmdbSearchResponse;
+      throw err;
+    }),
+    omdbFetch<OmdbSearchResponse>({ s: query, type: "series" }).catch((err) => {
+      if (err instanceof OmdbError && err.status === 502 && /no.*result/i.test(err.message))
+        return { Response: "False" } as OmdbSearchResponse;
+      throw err;
+    }),
+  ]);
+  const movies = (movieData.Search ?? []).map(searchItemToResult);
+  const series = (seriesData.Search ?? []).map(searchItemToResult);
+  // Interleave but keep movies slightly favored in tied positions
+  const out: MovieSearchResult[] = [];
+  const max = Math.max(movies.length, series.length);
+  for (let i = 0; i < max; i++) {
+    if (movies[i]) out.push(movies[i]!);
+    if (series[i]) out.push(series[i]!);
+  }
+  return out;
 }
 
 export async function getMovieDetails(imdbId: string): Promise<MovieDetails> {
@@ -186,4 +232,53 @@ export async function getMovieDetails(imdbId: string): Promise<MovieDetails> {
     throw new OmdbError(data.Error ?? "movie not found", 404);
   }
   return detailToResult(data);
+}
+
+export async function getSeriesDetails(imdbId: string): Promise<SeriesDetails> {
+  if (!/^tt\d+$/.test(imdbId)) {
+    throw new OmdbError("invalid IMDb ID", 400);
+  }
+  const data = await omdbFetch<OmdbDetailResponse>({
+    i: imdbId,
+    plot: "full",
+  });
+  if (data.Response === "False") {
+    throw new OmdbError(data.Error ?? "series not found", 404);
+  }
+  const base = detailToResult(data);
+  const totalSeasons = Number(data.totalSeasons);
+  return {
+    ...base,
+    type: "series",
+    totalSeasons: Number.isFinite(totalSeasons) ? totalSeasons : 0,
+  };
+}
+
+export async function getSeasonEpisodes(
+  imdbId: string,
+  season: number,
+): Promise<SeriesEpisode[]> {
+  if (!/^tt\d+$/.test(imdbId)) {
+    throw new OmdbError("invalid IMDb ID", 400);
+  }
+  if (!Number.isInteger(season) || season < 1) {
+    throw new OmdbError("season must be a positive integer", 400);
+  }
+  const data = await omdbFetch<OmdbSeasonResponse>({
+    i: imdbId,
+    Season: String(season),
+  });
+  if (data.Response === "False") {
+    throw new OmdbError(data.Error ?? "season not found", 404);
+  }
+  return (data.Episodes ?? []).map((e) => ({
+    imdbId: e.imdbID,
+    seriesImdbId: imdbId,
+    season,
+    episode: Number(e.Episode),
+    title: e.Title,
+    released: e.Released && e.Released !== "N/A" ? e.Released : null,
+    rating: parseRating(e.imdbRating),
+    overview: "",
+  }));
 }

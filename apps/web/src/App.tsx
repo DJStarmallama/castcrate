@@ -1,10 +1,18 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { MovieDetails, MovieSearchResult, TorrentResult } from "@castcrate/shared";
+import type {
+  MovieDetails,
+  MovieSearchResult,
+  SeriesDetails,
+  SeriesEpisode,
+  TorrentResult,
+} from "@castcrate/shared";
 import { SearchBar } from "./components/SearchBar";
 import { ResultsGrid } from "./components/ResultsGrid";
 import { MovieDetail } from "./components/MovieDetail";
+import { SeriesDetail } from "./components/SeriesDetail";
 import { TorrentPicker } from "./components/TorrentPicker";
+import { EpisodePicker } from "./components/EpisodePicker";
 import { Player } from "./components/Player";
 import { Library } from "./components/Library";
 import { Settings } from "./components/Settings";
@@ -12,11 +20,26 @@ import { useDebounced } from "./hooks/useDebounced";
 import { useGlobalShortcut } from "./hooks/useGlobalShortcut";
 import { api, ApiError, type StartTorrentResult } from "./lib/api";
 
+interface SelectedItem {
+  imdbId: string;
+  type: "movie" | "series";
+}
+
+interface EpisodeSelection {
+  series: SeriesDetails;
+  episode: SeriesEpisode;
+}
+
 export default function App() {
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<SelectedItem | null>(null);
   const [findFor, setFindFor] = useState<MovieDetails | null>(null);
+  const [pickEpisode, setPickEpisode] = useState<EpisodeSelection | null>(null);
   const [session, setSession] = useState<StartTorrentResult | null>(null);
+  const [sessionTitle, setSessionTitle] = useState<{
+    title: string;
+    poster: string | null;
+  } | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -31,29 +54,77 @@ export default function App() {
 
   const search = useQuery({
     queryKey: ["search", debounced],
-    queryFn: () => api.searchMovies(debounced),
+    queryFn: () => api.search(debounced),
     enabled: debounced.trim().length > 0,
   });
 
   const start = useMutation({
-    mutationFn: (t: TorrentResult) =>
+    mutationFn: (params: {
+      torrent: TorrentResult;
+      title: string;
+      posterUrl: string | null;
+      imdbId: string;
+    }) =>
       api.startTorrent({
-        magnet: t.magnet,
-        title: findFor?.title,
-        posterUrl: findFor?.poster ?? null,
-        imdbId: findFor?.imdbId ?? null,
-        resolution: t.resolution,
+        magnet: params.torrent.magnet,
+        title: params.title,
+        posterUrl: params.posterUrl,
+        imdbId: params.imdbId,
+        resolution: params.torrent.resolution,
       }),
-    onSuccess: (data) => {
+    onSuccess: (data, params) => {
       setSession(data);
+      setSessionTitle({ title: params.title, poster: params.posterUrl });
       setStartError(null);
     },
-    onError: (err: Error) => {
-      setStartError(err.message);
-    },
+    onError: (err: Error) => setStartError(err.message),
   });
 
+  const startMovie = (t: TorrentResult) => {
+    if (!findFor) return;
+    start.mutate({
+      torrent: t,
+      title: findFor.title,
+      posterUrl: findFor.poster,
+      imdbId: findFor.imdbId,
+    });
+  };
+
+  const startEpisode = (t: TorrentResult) => {
+    if (!pickEpisode) return;
+    const { series, episode } = pickEpisode;
+    const epTag = `S${episode.season}E${String(episode.episode).padStart(2, "0")}`;
+    start.mutate({
+      torrent: t,
+      title: `${series.title} ${epTag}${episode.title ? ` — ${episode.title}` : ""}`,
+      posterUrl: series.poster,
+      imdbId: series.imdbId,
+    });
+  };
+
+  const closePlayer = () => {
+    setSession(null);
+    setSessionTitle(null);
+    setFindFor(null);
+    setPickEpisode(null);
+  };
+
   const showHero = !debounced.trim();
+  const playerMovie =
+    sessionTitle && session
+      ? ({
+          imdbId: pickEpisode?.series.imdbId ?? findFor?.imdbId ?? "",
+          type: "movie",
+          title: sessionTitle.title,
+          year: null,
+          poster: sessionTitle.poster,
+          rating: 0,
+          overview: "",
+          runtime: null,
+          genres: [],
+          cast: [],
+        } satisfies MovieDetails)
+      : null;
 
   return (
     <main className="mx-auto flex min-h-full max-w-7xl flex-col px-6 py-6">
@@ -100,7 +171,9 @@ export default function App() {
         {search.data && (
           <ResultsGrid
             results={search.data.results}
-            onSelect={(m: MovieSearchResult) => setSelectedId(m.imdbId)}
+            onSelect={(m: MovieSearchResult) =>
+              setSelected({ imdbId: m.imdbId, type: m.type })
+            }
           />
         )}
         {search.data && search.data.results.length === 0 && debounced.trim() && (
@@ -110,15 +183,26 @@ export default function App() {
         )}
       </section>
 
-      {selectedId !== null && !findFor && !session && (
+      {selected?.type === "movie" && !findFor && !session && (
         <MovieDetail
-          imdbId={selectedId}
-          onClose={() => setSelectedId(null)}
+          imdbId={selected.imdbId}
+          onClose={() => setSelected(null)}
           onFindAndCast={(movie) => {
             setFindFor(movie);
-            setSelectedId(null);
+            setSelected(null);
           }}
           findCastEnabled
+        />
+      )}
+
+      {selected?.type === "series" && !pickEpisode && !session && (
+        <SeriesDetail
+          imdbId={selected.imdbId}
+          onClose={() => setSelected(null)}
+          onPickEpisode={(series, episode) => {
+            setPickEpisode({ series, episode });
+            setSelected(null);
+          }}
         />
       )}
 
@@ -129,12 +213,24 @@ export default function App() {
             setFindFor(null);
             setStartError(null);
           }}
-          onPick={(t) => start.mutate(t)}
+          onPick={startMovie}
         />
       )}
 
-      {findFor && start.isPending && (
-        <BlockingNotice text={`Connecting to peers for ${findFor.title}…`} />
+      {pickEpisode && !session && (
+        <EpisodePicker
+          series={pickEpisode.series}
+          episode={pickEpisode.episode}
+          onClose={() => {
+            setPickEpisode(null);
+            setStartError(null);
+          }}
+          onPick={startEpisode}
+        />
+      )}
+
+      {start.isPending && (
+        <BlockingNotice text="Connecting to peers…" />
       )}
 
       {startError && (
@@ -144,15 +240,8 @@ export default function App() {
         />
       )}
 
-      {session && findFor && (
-        <Player
-          movie={findFor}
-          session={session}
-          onClose={() => {
-            setSession(null);
-            setFindFor(null);
-          }}
-        />
+      {session && playerMovie && (
+        <Player movie={playerMovie} session={session} onClose={closePlayer} />
       )}
 
       {showLibrary && <Library onClose={() => setShowLibrary(false)} />}

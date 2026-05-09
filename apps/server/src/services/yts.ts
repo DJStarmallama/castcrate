@@ -74,6 +74,7 @@ export function toResult(t: YtsTorrent, m: YtsMovie): TorrentResult | null {
     resolution: q,
     videoCodec: t.video_codec,
     source: "yts",
+    castFriendly: true,
   };
 }
 

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { extname } from "node:path";
 import { searchTorrents } from "../services/yts.js";
+import { searchEpisode, searchSeasonPack } from "../services/eztv.js";
 import {
   startTorrent,
   getStatus,
@@ -40,6 +41,32 @@ export async function torrentRoutes(app: FastifyInstance) {
       }
     },
   );
+
+  app.get<{
+    Querystring: { imdbId?: string; season?: string; episode?: string };
+  }>("/api/search/torrents/episode", async (req, reply) => {
+    const imdbId = (req.query.imdbId ?? "").trim();
+    const season = Number(req.query.season);
+    const episode = Number(req.query.episode);
+    if (!/^tt\d+$/.test(imdbId) || !Number.isInteger(season) || !Number.isInteger(episode)) {
+      return reply.code(400).send({
+        error: "imdbId (ttNNN), season, and episode are required",
+      });
+    }
+    try {
+      const [episodeResults, packResults] = await Promise.all([
+        searchEpisode(imdbId, season, episode),
+        searchSeasonPack(imdbId, season),
+      ]);
+      return {
+        episode: episodeResults,
+        seasonPacks: packResults,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "torrent search failed";
+      return reply.code(502).send({ error: msg });
+    }
+  });
 
   app.post<{
     Body: {

@@ -11,7 +11,7 @@ export function MovieCard({ movie, onClick }: Props) {
       onClick={onClick}
       className="group flex flex-col text-left transition hover:scale-[1.02]"
     >
-      <div className="aspect-[2/3] w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
         {movie.poster ? (
           <img
             src={movie.poster}
@@ -23,6 +23,11 @@ export function MovieCard({ movie, onClick }: Props) {
           <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-950 text-3xl font-semibold text-zinc-600">
             {movie.title.charAt(0)}
           </div>
+        )}
+        {movie.type === "series" && (
+          <span className="absolute left-2 top-2 rounded-full bg-indigo-500/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white shadow">
+            TV
+          </span>
         )}
       </div>
       <div className="mt-2">

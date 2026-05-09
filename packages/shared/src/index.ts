@@ -1,5 +1,8 @@
+export type ContentType = "movie" | "series";
+
 export interface MovieSearchResult {
   imdbId: string;
+  type: ContentType;
   title: string;
   year: number | null;
   poster: string | null;
@@ -13,6 +16,21 @@ export interface MovieDetails extends MovieSearchResult {
   cast: { name: string; character: string }[];
 }
 
+export interface SeriesDetails extends MovieDetails {
+  totalSeasons: number;
+}
+
+export interface SeriesEpisode {
+  imdbId: string;
+  seriesImdbId: string;
+  season: number;
+  episode: number;
+  title: string;
+  released: string | null;
+  rating: number;
+  overview: string;
+}
+
 export interface TorrentResult {
   title: string;
   magnet: string;
@@ -20,9 +38,15 @@ export interface TorrentResult {
   sizeBytes: number;
   seeds: number;
   peers: number;
-  resolution: "720p" | "1080p" | "2160p";
+  resolution: "480p" | "720p" | "1080p" | "2160p" | "unknown";
   videoCodec: string;
-  source: "yts";
+  source: "yts" | "eztv";
+  // For TV: which episode (or season pack with episode=0)
+  season?: number;
+  episode?: number;
+  // Whether this codec/quality is expected to play on a default Chromecast.
+  // false → user gets a "may not play on older Chromecasts" hint.
+  castFriendly: boolean;
 }
 
 export interface CastDevice {

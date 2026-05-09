@@ -3,6 +3,8 @@ import type {
   CastDevice,
   MovieDetails,
   MovieSearchResult,
+  SeriesDetails,
+  SeriesEpisode,
   TorrentResult,
 } from "@castcrate/shared";
 
@@ -73,16 +75,30 @@ export interface SystemCheck {
 }
 
 export const api = {
-  searchMovies: (q: string) =>
+  search: (q: string) =>
     request<{ results: MovieSearchResult[] }>(
-      `/api/search/movies?q=${encodeURIComponent(q)}`,
+      `/api/search?q=${encodeURIComponent(q)}`,
     ),
   movieDetails: (imdbId: string) => request<MovieDetails>(`/api/movies/${imdbId}`),
+  seriesDetails: (imdbId: string) => request<SeriesDetails>(`/api/series/${imdbId}`),
+  seasonEpisodes: (imdbId: string, season: number) =>
+    request<{ season: number; episodes: SeriesEpisode[] }>(
+      `/api/series/${imdbId}/seasons/${season}`,
+    ),
   searchTorrents: (title: string, year?: number) => {
     const url = new URL("/api/search/torrents", window.location.origin);
     url.searchParams.set("title", title);
     if (year) url.searchParams.set("year", String(year));
     return request<{ results: TorrentResult[] }>(url.pathname + url.search);
+  },
+  searchEpisodeTorrents: (imdbId: string, season: number, episode: number) => {
+    const url = new URL("/api/search/torrents/episode", window.location.origin);
+    url.searchParams.set("imdbId", imdbId);
+    url.searchParams.set("season", String(season));
+    url.searchParams.set("episode", String(episode));
+    return request<{ episode: TorrentResult[]; seasonPacks: TorrentResult[] }>(
+      url.pathname + url.search,
+    );
   },
   startTorrent: (params: {
     magnet: string;
