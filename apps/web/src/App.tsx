@@ -242,6 +242,7 @@ export default function App() {
             setFindFor(movie);
             setSelected(null);
           }}
+          onPickSimilar={(t) => setSelected(t)}
           findCastEnabled
         />
       )}
@@ -254,6 +255,7 @@ export default function App() {
             setPickEpisode({ series, episode });
             setSelected(null);
           }}
+          onPickSimilar={(t) => setSelected(t)}
         />
       )}
 

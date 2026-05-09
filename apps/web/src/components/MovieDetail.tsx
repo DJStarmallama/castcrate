@@ -4,15 +4,23 @@ import type { MovieDetails } from "@castcrate/shared";
 import { api } from "../lib/api";
 import { useEscape } from "../hooks/useEscape";
 import { TrailerView } from "./TrailerView";
+import { TitleEnrichment } from "./TitleEnrichment";
 
 interface Props {
   imdbId: string;
   onClose: () => void;
   onFindAndCast: (movie: MovieDetails) => void;
+  onPickSimilar?: (t: { imdbId: string; type: "movie" | "series" }) => void;
   findCastEnabled?: boolean;
 }
 
-export function MovieDetail({ imdbId, onClose, onFindAndCast, findCastEnabled = false }: Props) {
+export function MovieDetail({
+  imdbId,
+  onClose,
+  onFindAndCast,
+  onPickSimilar,
+  findCastEnabled = false,
+}: Props) {
   useEscape(onClose);
   const [trailerOn, setTrailerOn] = useState(false);
   const q = useQuery<MovieDetails>({
@@ -55,12 +63,21 @@ export function MovieDetail({ imdbId, onClose, onFindAndCast, findCastEnabled = 
           />
         )}
         {q.data && !trailerOn && (
-          <DetailBody
-            movie={q.data}
-            onFindAndCast={onFindAndCast}
-            findCastEnabled={findCastEnabled}
-            onPlayTrailer={() => setTrailerOn(true)}
-          />
+          <>
+            <DetailBody
+              movie={q.data}
+              onFindAndCast={onFindAndCast}
+              findCastEnabled={findCastEnabled}
+              onPlayTrailer={() => setTrailerOn(true)}
+            />
+            {onPickSimilar && (
+              <TitleEnrichment
+                imdbId={q.data.imdbId}
+                title={q.data.title}
+                onPickSimilar={onPickSimilar}
+              />
+            )}
+          </>
         )}
       </div>
     </div>

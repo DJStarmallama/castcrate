@@ -248,6 +248,19 @@ export const api = {
     request<{ genres: DiscoverGenre[] }>("/api/discover/genres"),
   discoverProviders: () =>
     request<{ providers: DiscoverProvider[] }>("/api/discover/providers"),
+  discoverEnrichment: (imdbId: string, title: string) => {
+    const url = new URL("/api/discover/enrichment", window.location.origin);
+    url.searchParams.set("imdbId", imdbId);
+    url.searchParams.set("title", title);
+    return request<{
+      providers: {
+        shortName: string;
+        name: string;
+        monetizationType: "FLATRATE" | "FREE" | "ADS" | "FAST";
+      }[];
+      similar: DiscoverTitle[];
+    }>(url.pathname + url.search);
+  },
 };
 
 export interface SubtitleTrack {

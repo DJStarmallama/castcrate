@@ -1,5 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { getGenres, getPopularTitles } from "../services/justwatch.js";
+import {
+  getGenres,
+  getPopularTitles,
+  getTitleEnrichment,
+} from "../services/justwatch.js";
 
 // AU streaming providers we surface as Discover rows. Order = display order.
 // shortNames come from JustWatch (`packages` query). Add/remove to taste.
@@ -64,4 +68,26 @@ export async function discoverRoutes(app: FastifyInstance) {
   app.get("/api/discover/providers", async () => ({
     providers: PROVIDERS.map((p) => ({ ...p })),
   }));
+
+  app.get<{ Querystring: { imdbId?: string; title?: string } }>(
+    "/api/discover/enrichment",
+    async (req, reply) => {
+      const imdbId = (req.query.imdbId ?? "").trim();
+      const title = (req.query.title ?? "").trim();
+      if (!/^tt\d+$/.test(imdbId) || !title) {
+        return reply.code(400).send({
+          error: "imdbId (ttNNN) and title are required",
+        });
+      }
+      try {
+        const data = await getTitleEnrichment({ imdbId, title });
+        // Always 200; null body when JustWatch has no record. Lets the client
+        // render gracefully without an error path.
+        return data ?? { providers: [], similar: [] };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "enrichment failed";
+        return reply.code(502).send({ error: msg });
+      }
+    },
+  );
 }

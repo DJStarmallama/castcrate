@@ -1,6 +1,6 @@
 # Feature: discovery — trailers, trending, recommendations
 
-**Status:** Phases α + β shipped (trailers + Discover tab); γ pending
+**Status:** All phases shipped — trailers, Discover tab, provider badges + recommendations.
 **Created:** 2026-05-10
 **Goal:** Replace the "what should I watch tonight?" decision loop that Netflix/Prime/Stan currently solve. Trending lists per-platform per-region, fast trailer previews, "more like this" recommendations.
 
@@ -44,11 +44,21 @@ When the search bar is empty, the home view shows the Discover layout:
 
 **Provider shortNames** (JustWatch internal): `nfx stn bng prv dnp pmp atp`.
 
-### Phase γ — Polish (planned)
+### Phase γ — Provider badges + recommendations ✅
 
-- "Available on:" provider badges on search results + Discover cards.
-- Recommendations row at the bottom of the detail modal ("More like this" via JustWatch).
-- Per-region UI affordances if we ever target more than AU.
+The detail modal grew an enrichment footer that surfaces:
+
+- **Available on** — every AU subscription/free service that has the title (FLATRATE, FREE, ADS, FAST tiers — RENT/BUY skipped). Deduped: "Netflix Standard with Ads" collapses into "Netflix"; the various Apple TV / Amazon channel skins of Paramount+ collapse into Paramount+. FLATRATE badges are emerald-tinted, free/ad-supported are zinc.
+- **More like this** — JustWatch's `similarTitles` for the title (typically ~12 results). Clicking a poster opens its detail modal — recursive recommendations.
+
+**Data** — `getTitleEnrichment({ imdbId, title, country })`:
+- Single GraphQL roundtrip combining `popularTitles(searchQuery: title)` + inline-fragment `... on MovieOrShow { offers, similarTitles }` for the matching IMDb ID.
+- LRU(500, 1h), keyed by `${country}::${imdbId}`. Caches "no match" too.
+- Canonical name normaliser strips "Standard with Ads", "with Ads", "Apple TV Channel", "Amazon Channel", "Premium", "Basic", "Kids" suffixes.
+
+**Route:** `GET /api/discover/enrichment?imdbId=tt&title=…`. Always 200 — empty `{ providers: [], similar: [] }` on miss so the UI renders gracefully without an error path.
+
+**Component:** `<TitleEnrichment imdbId title onPickSimilar />` rendered below `DetailBody` in both `MovieDetail` and `SeriesDetail`. `onPickSimilar` lifts state in `App.tsx` to the same `selected` slot the search results use, so the click chains naturally.
 
 ## Trailers — gotchas
 

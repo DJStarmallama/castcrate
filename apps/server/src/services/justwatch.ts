@@ -38,6 +38,44 @@ const genresCache = new LRUCache<string, { shortName: string; name: string }[]>(
   ttl: 1000 * 60 * 60 * 24, // 24h — genres don't change
 });
 
+// One round-trip: search by title, find the matching IMDb ID in the result
+// list, then return offers + similar titles for that node.
+const ENRICHMENT_QUERY = `
+  query Enrich($country: Country!, $query: String!) {
+    popularTitles(country: $country, first: 5, filter: { searchQuery: $query }) {
+      edges {
+        node {
+          id
+          objectType
+          content(country: $country, language: "en") {
+            title
+            externalIds { imdbId }
+          }
+          ... on MovieOrShow {
+            offers(country: $country, platform: WEB) {
+              package { shortName clearName }
+              monetizationType
+            }
+            similarTitles(country: $country) {
+              id
+              objectType
+              content(country: $country, language: "en") {
+                title
+                originalReleaseYear
+                shortDescription
+                posterUrl
+                externalIds { imdbId }
+                scoring { imdbScore imdbVotes }
+                genres { shortName }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 const POPULAR_QUERY = `
   query Pop($country: Country!, $first: Int!, $filter: TitleFilter) {
     popularTitles(country: $country, first: $first, filter: $filter) {
@@ -168,6 +206,114 @@ export async function getPopularTitles(
     .filter((t): t is DiscoverTitle => t !== null);
   popularCache.set(cacheKey, titles);
   return titles;
+}
+
+export interface ProviderOffer {
+  shortName: string;
+  name: string;
+  monetizationType: "FLATRATE" | "FREE" | "ADS" | "FAST";
+}
+
+export interface TitleEnrichment {
+  providers: ProviderOffer[];
+  similar: DiscoverTitle[];
+}
+
+interface JwOffer {
+  package: { shortName: string; clearName: string };
+  monetizationType: string;
+}
+
+interface EnrichmentResponse {
+  data?: {
+    popularTitles?: {
+      edges?: {
+        node: JwHit & {
+          offers?: JwOffer[];
+          similarTitles?: JwHit[];
+        };
+      }[];
+    };
+  };
+  errors?: { message: string }[];
+}
+
+const SUBSCRIPTION_TYPES = new Set(["FLATRATE", "FREE", "ADS", "FAST"]);
+
+// Trim Apple TV Channel / Amazon Channel / "with Ads" / Kids variants down to
+// the canonical platform so badges don't double up: "Netflix Standard with Ads"
+// dedupes to "Netflix".
+function canonicalProviderName(clearName: string): string {
+  return clearName
+    .replace(/\s+Standard\s+with\s+Ads$/i, "")
+    .replace(/\s+with\s+Ads$/i, "")
+    .replace(/\s+Apple\s+TV(?:\s+Channel)?$/i, "")
+    .replace(/\s+Amazon\s+Channel$/i, "")
+    .replace(/\s+Premium$/i, "")
+    .replace(/\s+Basic$/i, "")
+    .replace(/\s+Kids$/i, "")
+    .trim();
+}
+
+// Wrap in `{ value }` so we can cache "no match" entries — LRUCache values
+// must be non-null.
+interface EnrichmentCacheEntry {
+  value: TitleEnrichment | null;
+}
+const enrichmentCache = new LRUCache<string, EnrichmentCacheEntry>({
+  max: 500,
+  ttl: 1000 * 60 * 60, // 1h
+});
+
+export async function getTitleEnrichment(params: {
+  imdbId: string;
+  title: string;
+  country?: string;
+}): Promise<TitleEnrichment | null> {
+  const country = params.country ?? "AU";
+  const cacheKey = `${country}::${params.imdbId}`;
+  const cached = enrichmentCache.get(cacheKey);
+  if (cached) return cached.value;
+
+  const json = await postJustWatch<EnrichmentResponse>(ENRICHMENT_QUERY, {
+    country,
+    query: params.title,
+  });
+  if (json.errors?.length) {
+    throw new Error(`JustWatch: ${json.errors.map((e) => e.message).join("; ")}`);
+  }
+  const edges = json.data?.popularTitles?.edges ?? [];
+  const match = edges.find(
+    (e) => e.node.content?.externalIds?.imdbId === params.imdbId,
+  );
+  if (!match) {
+    enrichmentCache.set(cacheKey, { value: null });
+    return null;
+  }
+  const node = match.node;
+
+  // Dedupe + filter offers to subscription/free tiers.
+  const seen = new Set<string>();
+  const providers: ProviderOffer[] = [];
+  for (const o of node.offers ?? []) {
+    if (!SUBSCRIPTION_TYPES.has(o.monetizationType)) continue;
+    const name = canonicalProviderName(o.package.clearName);
+    if (seen.has(name)) continue;
+    seen.add(name);
+    providers.push({
+      shortName: o.package.shortName,
+      name,
+      monetizationType: o.monetizationType as ProviderOffer["monetizationType"],
+    });
+  }
+
+  const similar: DiscoverTitle[] = (node.similarTitles ?? [])
+    .map((s) => toDiscoverTitle(s))
+    .filter((t): t is DiscoverTitle => t !== null);
+
+  const enrichment: TitleEnrichment = { providers, similar };
+  enrichmentCache.set(cacheKey, { value: enrichment });
+  return enrichment;
 }
 
 export async function getGenres(): Promise<{ shortName: string; name: string }[]> {
