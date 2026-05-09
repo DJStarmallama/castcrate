@@ -40,7 +40,7 @@ export interface TorrentResult {
   peers: number;
   resolution: "480p" | "720p" | "1080p" | "2160p" | "unknown";
   videoCodec: string;
-  source: "yts" | "eztv";
+  source: "yts" | "eztv" | "knaben";
   // For TV: which episode (or season pack with episode=0)
   season?: number;
   episode?: number;

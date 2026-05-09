@@ -1,8 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { extname } from "node:path";
+import type { TorrentResult } from "@castcrate/shared";
 import { searchTorrents } from "../services/yts.js";
 import { searchEpisode, searchSeasonPack } from "../services/eztv.js";
+import { searchKnabenEpisode, searchKnabenMovie } from "../services/knaben.js";
 import {
   startTorrent,
   getStatus,
@@ -33,40 +35,84 @@ export async function torrentRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "title is required" });
       }
       const year = req.query.year ? Number(req.query.year) : undefined;
+      const tried: string[] = [];
+      const errors: string[] = [];
+      let results: TorrentResult[] = [];
       try {
-        const results = await searchTorrents(title, year);
-        return { results };
+        tried.push("yts");
+        results = await searchTorrents(title, year);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "torrent search failed";
-        return reply.code(502).send({ error: msg });
+        errors.push(`yts: ${(err as Error).message}`);
       }
+      if (results.length === 0) {
+        try {
+          tried.push("knaben");
+          results = await searchKnabenMovie(title, year);
+        } catch (err) {
+          errors.push(`knaben: ${(err as Error).message}`);
+        }
+      }
+      if (results.length === 0 && errors.length > 0) {
+        return reply.code(502).send({ error: errors.join("; "), tried });
+      }
+      return { results, tried };
     },
   );
 
   app.get<{
-    Querystring: { imdbId?: string; season?: string; episode?: string };
+    Querystring: {
+      imdbId?: string;
+      season?: string;
+      episode?: string;
+      title?: string;
+    };
   }>("/api/search/torrents/episode", async (req, reply) => {
     const imdbId = (req.query.imdbId ?? "").trim();
     const season = Number(req.query.season);
     const episode = Number(req.query.episode);
+    const title = (req.query.title ?? "").trim();
     if (!/^tt\d+$/.test(imdbId) || !Number.isInteger(season) || !Number.isInteger(episode)) {
       return reply.code(400).send({
         error: "imdbId (ttNNN), season, and episode are required",
       });
     }
+    const tried: string[] = [];
+    const errors: string[] = [];
+    let episodeResults: TorrentResult[] = [];
+    let packResults: TorrentResult[] = [];
+
     try {
-      const [episodeResults, packResults] = await Promise.all([
+      tried.push("eztv");
+      [episodeResults, packResults] = await Promise.all([
         searchEpisode(imdbId, season, episode),
         searchSeasonPack(imdbId, season),
       ]);
-      return {
-        episode: episodeResults,
-        seasonPacks: packResults,
-      };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "torrent search failed";
-      return reply.code(502).send({ error: msg });
+      errors.push(`eztv: ${(err as Error).message}`);
     }
+
+    if (episodeResults.length === 0 && title) {
+      try {
+        tried.push("knaben");
+        episodeResults = await searchKnabenEpisode(title, season, episode);
+      } catch (err) {
+        errors.push(`knaben: ${(err as Error).message}`);
+      }
+    }
+
+    if (
+      episodeResults.length === 0 &&
+      packResults.length === 0 &&
+      errors.length > 0
+    ) {
+      return reply.code(502).send({ error: errors.join("; "), tried });
+    }
+
+    return {
+      episode: episodeResults,
+      seasonPacks: packResults,
+      tried,
+    };
   });
 
   app.post<{

@@ -101,14 +101,22 @@ export const api = {
     if (year) url.searchParams.set("year", String(year));
     return request<{ results: TorrentResult[] }>(url.pathname + url.search);
   },
-  searchEpisodeTorrents: (imdbId: string, season: number, episode: number) => {
+  searchEpisodeTorrents: (
+    imdbId: string,
+    season: number,
+    episode: number,
+    title?: string,
+  ) => {
     const url = new URL("/api/search/torrents/episode", window.location.origin);
     url.searchParams.set("imdbId", imdbId);
     url.searchParams.set("season", String(season));
     url.searchParams.set("episode", String(episode));
-    return request<{ episode: TorrentResult[]; seasonPacks: TorrentResult[] }>(
-      url.pathname + url.search,
-    );
+    if (title) url.searchParams.set("title", title);
+    return request<{
+      episode: TorrentResult[];
+      seasonPacks: TorrentResult[];
+      tried?: string[];
+    }>(url.pathname + url.search);
   },
   startTorrent: (params: {
     magnet: string;

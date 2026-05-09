@@ -6,6 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 loadEnv({ path: ["../../.env", ".env"], quiet: true });
+const { setupDnsBypass } = await import("./lib/dns.js");
+setupDnsBypass();
 const { config } = await import("./lib/config.js");
 const { healthRoutes } = await import("./routes/health.js");
 const { moviesRoutes } = await import("./routes/movies.js");

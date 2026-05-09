@@ -18,7 +18,13 @@ export function EpisodePicker({ series, episode, onClose, onPick }: Props) {
 
   const q = useQuery({
     queryKey: ["episode-torrents", series.imdbId, episode.season, episode.episode],
-    queryFn: () => api.searchEpisodeTorrents(series.imdbId, episode.season, episode.episode),
+    queryFn: () =>
+      api.searchEpisodeTorrents(
+        series.imdbId,
+        episode.season,
+        episode.episode,
+        series.title,
+      ),
   });
 
   return (
@@ -68,18 +74,68 @@ export function EpisodePicker({ series, episode, onClose, onPick }: Props) {
         <div className="mt-4">
           {q.isPending && <p className="text-zinc-500">Searching torrents…</p>}
           {q.isError && (
-            <div className="rounded-lg border border-red-700/40 bg-red-950/30 p-4 text-sm text-red-200">
-              {q.error.message}
-            </div>
+            <EmptyResults
+              tried={extractTried(q.error.message)}
+              error={q.error.message}
+            />
           )}
           {q.data && tab === "episode" && (
-            <TorrentList results={q.data.episode} onPick={onPick} />
+            q.data.episode.length === 0 ? (
+              <EmptyResults tried={q.data.tried ?? []} />
+            ) : (
+              <TorrentList results={q.data.episode} onPick={onPick} />
+            )
           )}
           {q.data && tab === "season" && (
-            <TorrentList results={q.data.seasonPacks} onPick={onPick} />
+            q.data.seasonPacks.length === 0 ? (
+              <EmptyResults tried={q.data.tried ?? []} kind="season" />
+            ) : (
+              <TorrentList results={q.data.seasonPacks} onPick={onPick} />
+            )
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function extractTried(msg: string): string[] {
+  const tried: string[] = [];
+  if (/\beztv\b/i.test(msg)) tried.push("eztv");
+  if (/\bknaben\b/i.test(msg)) tried.push("knaben");
+  return tried;
+}
+
+function EmptyResults({
+  tried,
+  error,
+  kind = "episode",
+}: {
+  tried: string[];
+  error?: string;
+  kind?: "episode" | "season";
+}) {
+  const triedLabel = tried.length === 0 ? "" : tried.join(", ");
+  return (
+    <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-sm text-zinc-400">
+      <p>
+        No {kind === "season" ? "season packs" : "episode torrents"} found
+        {triedLabel ? ` in ${triedLabel}` : ""}.
+      </p>
+      <ul className="mt-3 list-disc pl-5 text-xs text-zinc-500">
+        <li>Older or niche shows often aren't indexed by EZTV or Knaben.</li>
+        <li>
+          Adding a private tracker (or using a tool like Prowlarr) would expand
+          coverage. Public indexers tend to focus on currently airing content.
+        </li>
+        <li>
+          If you're on a restrictive network, indexer hosts may be blocked at the
+          DNS level — a VPN usually fixes this.
+        </li>
+      </ul>
+      {error && (
+        <p className="mt-3 text-xs text-red-400/80">debug: {error}</p>
+      )}
     </div>
   );
 }
