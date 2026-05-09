@@ -39,7 +39,7 @@ The first time you run, macOS will prompt to allow incoming connections — requ
 | Var | Default | Notes |
 |---|---|---|
 | `OMDB_API_KEY` | _empty_ | Required for movie search. Free key at [omdbapi.com/apikey.aspx](https://www.omdbapi.com/apikey.aspx) — you'll get an email with both the key and an activation link; click the link before using the key. |
-| `DOWNLOAD_PATH` | `~/Downloads/CastCrate` | Where torrents are saved |
+| `DOWNLOAD_PATH` | `~/Downloads/LlamaSpitStream` | Where torrents are saved |
 | `PORT` | `3000` | Server port |
 | `BUFFER_PERCENT` | `2` | Pre-cast buffer threshold |
 | `YTS_BASE_URL` | `https://movies-api.accel.li/api/v2` | YTS rotates domains when seized; override if the default stops responding |
@@ -83,4 +83,4 @@ packages/
 
 ## Legal
 
-CastCrate is a tool for personal, local use only. Users are solely responsible for ensuring their use of this software complies with applicable copyright laws in their jurisdiction.
+Llama Spit Stream is a tool for personal, local use only. Users are solely responsible for ensuring their use of this software complies with applicable copyright laws in their jurisdiction.

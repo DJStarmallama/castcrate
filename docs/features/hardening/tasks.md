@@ -1,19 +1,19 @@
 # hardening — Task checklist
 
 **Last updated:** 2026-05-09
-**Progress:** 0 / 5 phases
+**Progress:** Phase A complete — 1 / 5 phases
 
 ---
 
-## Phase A — Docs & one-line correctness
+## Phase A — Docs & one-line correctness ✅
 
-- [ ] **A1.** Add `TRANSCODE_BUFFER_PERCENT`, `TRANSCODE_BITRATE`, `FFMPEG_PATH`, `YTS_BASE_URL`, `KNABEN_BASE_URL`, `DNS_BYPASS`, `DNS_UPSTREAMS` to `.env.example` with comments
-- [ ] **A2.** Move `YTS_BASE_URL` from `services/yts.ts` into `lib/config.ts`
-- [ ] **A3.** Pass `{ sequentialDownload: true }` to `client.add(...)` in `services/torrent.ts`
-- [ ] **A4.** Resolve brand drift — pick one of `castcrate` / `Llama Spit Stream`, update `apps/web/index.html` + `lib/config.ts` `DOWNLOAD_PATH` default + README
-- [ ] **A5.** Update `TorrentPicker.tsx` empty-state copy to use the `tried` array from API response
+- [x] **A1.** Add `TRANSCODE_BUFFER_PERCENT`, `TRANSCODE_BITRATE`, `FFMPEG_PATH`, `YTS_BASE_URL`, `KNABEN_BASE_URL`, `DNS_BYPASS`, `DNS_UPSTREAMS` to `.env.example` with comments
+- [x] **A2.** Move `YTS_BASE_URL` from `services/yts.ts` into `lib/config.ts`
+- [x] **A3.** Pass `{ sequentialDownload: true }` to `client.add(...)` in `services/torrent.ts`
+- [x] **A4.** Brand: pick `Llama Spit Stream` (already chosen in `index.html` + `App.tsx`); update `.env.example` `DOWNLOAD_PATH` default and README env table + legal section to match
+- [x] **A5.** Update `TorrentPicker.tsx` empty-state copy to use the `tried` array from API response (also threaded `tried` through the web `api.searchTorrents` type)
 
-**Acceptance:** `pnpm typecheck` + `pnpm test` green; `.env.example` documents every env var read by the server.
+**Acceptance:** ✅ `pnpm typecheck` clean; `pnpm test` 51/51 passing.
 
 ---
 

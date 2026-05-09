@@ -99,7 +99,9 @@ export const api = {
     const url = new URL("/api/search/torrents", window.location.origin);
     url.searchParams.set("title", title);
     if (year) url.searchParams.set("year", String(year));
-    return request<{ results: TorrentResult[] }>(url.pathname + url.search);
+    return request<{ results: TorrentResult[]; tried?: string[] }>(
+      url.pathname + url.search,
+    );
   },
   searchEpisodeTorrents: (
     imdbId: string,

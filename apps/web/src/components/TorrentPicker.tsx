@@ -53,7 +53,11 @@ export function TorrentPicker({ movie, onClose, onPick }: Props) {
           )}
           {q.data && q.data.results.length === 0 && (
             <p className="text-zinc-500">
-              No compatible (1080p / 720p · x264) torrents found on YTS for this title.
+              No compatible (1080p / 720p · x264) torrents found
+              {q.data.tried && q.data.tried.length > 0
+                ? ` in ${q.data.tried.join(", ")}`
+                : ""}
+              {" "}for this title.
             </p>
           )}
           {q.data && q.data.results.length > 0 && (

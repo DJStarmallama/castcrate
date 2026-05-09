@@ -16,4 +16,5 @@ export const config = {
   transcodeBufferPercent: Number(process.env.TRANSCODE_BUFFER_PERCENT ?? 5),
   transcodeBitrate: process.env.TRANSCODE_BITRATE ?? "5M",
   ffmpegPath: process.env.FFMPEG_PATH ?? "ffmpeg",
+  ytsBaseUrl: process.env.YTS_BASE_URL ?? "https://movies-api.accel.li/api/v2",
 };

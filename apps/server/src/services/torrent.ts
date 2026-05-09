@@ -32,7 +32,7 @@ interface WtTorrent {
 interface WtClient {
   add(
     torrentId: string,
-    opts: { path: string },
+    opts: { path: string; sequentialDownload?: boolean },
     cb: (torrent: WtTorrent) => void,
   ): WtTorrent;
   get(infoHash: string): WtTorrent | null | Promise<WtTorrent | null>;
@@ -112,7 +112,9 @@ export async function startTorrent(magnet: string): Promise<TorrentSession> {
       () => reject(new Error("Timed out waiting for torrent metadata (60s)")),
       60_000,
     );
-    client.add(magnet, { path: config.downloadPath }, (torrent) => {
+    // sequentialDownload: stream the head of the file before the tail —
+    // required for in-progress playback and byte-range requests to work.
+    client.add(magnet, { path: config.downloadPath, sequentialDownload: true }, (torrent) => {
       const finalize = () => {
         const file = pickVideoFile(torrent.files);
         if (!file) {

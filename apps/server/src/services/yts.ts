@@ -1,7 +1,6 @@
 import { LRUCache } from "lru-cache";
 import type { TorrentResult } from "@castcrate/shared";
-
-const YTS_BASE = process.env.YTS_BASE_URL ?? "https://movies-api.accel.li/api/v2";
+import { config } from "../lib/config.js";
 
 const TRACKERS = [
   "udp://open.demonii.com:1337/announce",
@@ -101,7 +100,7 @@ export async function searchTorrents(title: string, year?: number): Promise<Torr
   const cached = cache.get(key);
   if (cached) return cached;
 
-  const url = new URL(`${YTS_BASE}/list_movies.json`);
+  const url = new URL(`${config.ytsBaseUrl}/list_movies.json`);
   url.searchParams.set("query_term", title);
   url.searchParams.set("limit", "20");
 
@@ -112,9 +111,9 @@ export async function searchTorrents(title: string, year?: number): Promise<Torr
     const cause = (err as Error & { cause?: { code?: string } })?.cause;
     if (cause?.code === "ENOTFOUND" || cause?.code === "EAI_AGAIN") {
       throw new Error(
-        `Cannot reach YTS API at ${YTS_BASE}. The host may have moved (YTS rotates ` +
-          `domains when seized). Try setting YTS_BASE_URL in .env to a working mirror, ` +
-          `or use a VPN if the issue is your ISP.`,
+        `Cannot reach YTS API at ${config.ytsBaseUrl}. The host may have moved ` +
+          `(YTS rotates domains when seized). Try setting YTS_BASE_URL in .env to a ` +
+          `working mirror, or use a VPN if the issue is your ISP.`,
       );
     }
     throw err;
