@@ -1,6 +1,9 @@
 import { config as loadEnv } from "dotenv";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 loadEnv({ path: ["../../.env", ".env"], quiet: true });
 const { config } = await import("./lib/config.js");
@@ -21,6 +24,20 @@ await app.register(moviesRoutes);
 await app.register(torrentRoutes);
 await app.register(castRoutes);
 await app.register(historyRoutes);
+
+const here = dirname(fileURLToPath(import.meta.url));
+const webDist = join(here, "../../web/dist");
+if (existsSync(webDist)) {
+  const { default: fastifyStatic } = await import("@fastify/static");
+  await app.register(fastifyStatic, { root: webDist, prefix: "/" });
+  app.setNotFoundHandler((req, reply) => {
+    if (req.url.startsWith("/api") || req.url.startsWith("/stream")) {
+      return reply.code(404).send({ error: "not found" });
+    }
+    return reply.sendFile("index.html");
+  });
+  app.log.info(`Serving web bundle from ${webDist}`);
+}
 
 startDiscovery();
 

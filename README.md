@@ -52,11 +52,13 @@ The first time you run, macOS will prompt to allow incoming connections — requ
 
 | Command | What |
 |---|---|
-| `pnpm dev` | server + web in parallel |
+| `pnpm dev` | server (3000) + Vite (5173) in parallel — for active development |
 | `pnpm dev:server` | server only |
 | `pnpm dev:web` | web only |
 | `pnpm typecheck` | tsc across the workspace |
-| `pnpm build` | production bundles |
+| `pnpm test` | vitest |
+| `pnpm build` | production bundles for both apps |
+| `pnpm start` | runs the server in prod mode — serves the built web bundle from the same process on port 3000 |
 
 ## Layout
 
