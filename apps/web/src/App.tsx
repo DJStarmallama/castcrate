@@ -17,6 +17,7 @@ import { Player } from "./components/Player";
 import { Library } from "./components/Library";
 import { Settings } from "./components/Settings";
 import { Theatre } from "./components/Theatre";
+import { Discover } from "./components/Discover";
 import { useDebounced } from "./hooks/useDebounced";
 import { useGlobalShortcut } from "./hooks/useGlobalShortcut";
 import { useWsBridge } from "./hooks/useWsBridge";
@@ -226,6 +227,12 @@ export default function App() {
           </div>
         )}
       </section>
+
+      {showHero && (
+        <Discover
+          onPickTitle={(t) => setSelected({ imdbId: t.imdbId, type: t.type })}
+        />
+      )}
 
       {selected?.type === "movie" && !findFor && !session && (
         <MovieDetail

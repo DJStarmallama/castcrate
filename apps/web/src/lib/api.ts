@@ -89,6 +89,29 @@ export interface RuntimeSettings {
   transcodeBitrate: string;
 }
 
+export interface DiscoverTitle {
+  jwId: string;
+  imdbId: string | null;
+  type: "movie" | "series";
+  title: string;
+  year: number | null;
+  poster: string | null;
+  overview: string;
+  rating: number;
+  votes: number;
+  genres: string[];
+}
+
+export interface DiscoverGenre {
+  shortName: string;
+  name: string;
+}
+
+export interface DiscoverProvider {
+  id: string;
+  name: string;
+}
+
 export const api = {
   search: (q: string, type?: "movie" | "series") => {
     const url = new URL("/api/search", window.location.origin);
@@ -208,6 +231,23 @@ export const api = {
       searchUrl: string;
     }>(url.pathname + url.search);
   },
+  discoverPopular: (params: {
+    provider?: string;
+    genre?: string;
+    type?: "movie" | "series";
+    limit?: number;
+  } = {}) => {
+    const url = new URL("/api/discover/popular", window.location.origin);
+    if (params.provider) url.searchParams.set("provider", params.provider);
+    if (params.genre) url.searchParams.set("genre", params.genre);
+    if (params.type) url.searchParams.set("type", params.type);
+    if (params.limit) url.searchParams.set("limit", String(params.limit));
+    return request<{ titles: DiscoverTitle[] }>(url.pathname + url.search);
+  },
+  discoverGenres: () =>
+    request<{ genres: DiscoverGenre[] }>("/api/discover/genres"),
+  discoverProviders: () =>
+    request<{ providers: DiscoverProvider[] }>("/api/discover/providers"),
 };
 
 export interface SubtitleTrack {

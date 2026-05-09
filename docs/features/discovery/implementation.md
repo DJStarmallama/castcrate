@@ -1,6 +1,6 @@
 # Feature: discovery — trailers, trending, recommendations
 
-**Status:** Phase α shipped (trailers); β + γ pending
+**Status:** Phases α + β shipped (trailers + Discover tab); γ pending
 **Created:** 2026-05-10
 **Goal:** Replace the "what should I watch tonight?" decision loop that Netflix/Prime/Stan currently solve. Trending lists per-platform per-region, fast trailer previews, "more like this" recommendations.
 
@@ -22,20 +22,27 @@ Lightest possible win: a "Trailer" button on Movie + Series detail modals. Opens
 - `apps/web/src/components/TrailerView.tsx` — inline iframe with autoplay, "Search on YouTube ↗" fallback when no result.
 - `MovieDetail.tsx` / `SeriesDetail.tsx` — Trailer button + state, swap body for `<TrailerView>`.
 
-### Phase β — Discover tab (planned)
+### Phase β — Discover tab ✅
 
-New top-level "Discover" view with horizontal-scrolling rows:
+When the search bar is empty, the home view shows the Discover layout:
 
-- Trending this week (region: AU)
-- Popular on Netflix AU
-- Popular on Stan AU
-- Popular on Binge AU
-- Popular on Prime AU
-- Popular on Disney+ AU
-- Popular on Paramount+ AU
-- Popular on Apple TV+ AU
+- Genre filter pills along the top — `All / Documentary / History / Music & Musical / Mystery & Thriller / Fantasy / Horror / Western / Science-Fiction / Action & Adventure / Comedy / Crime / Sport / War & Military / Reality TV / Drama / Kids & Family / Romance / Animation` (19 genres direct from JustWatch). Pick one → every row below filters by it.
+- Horizontal-scrolling rows:
+  - Trending this week (no provider filter)
+  - Popular on Netflix / Stan / BINGE / Prime Video / Disney+ / Paramount+ / Apple TV+ (all AU)
+- Click any poster → existing detail modal flow (uses the IMDb ID from JustWatch's `externalIds`). Posters without an IMDb match are dimmed and disabled.
 
-Data: JustWatch GraphQL adapter (`services/justwatch.ts`) + cache. Click a poster → existing detail modal flow.
+**Data layer** — `services/justwatch.ts`:
+- `getPopularTitles({ country, packages?, genres?, objectTypes?, first })` — TitleFilter-shaped GraphQL query against `apis.justwatch.com/graphql`. LRU(200, 1h).
+- `getGenres()` — 19 genres, LRU(1, 24h).
+- Poster URLs are templates `/poster/<id>/{profile}/<slug>.{format}` — adapter substitutes `s276` + `webp` server-side so the client gets ready-to-use URLs.
+
+**Routes:**
+- `GET /api/discover/popular?provider=&genre=&type=&limit=`
+- `GET /api/discover/genres`
+- `GET /api/discover/providers` — AU streamer list (Netflix, Stan, BINGE, Prime, Disney+, Paramount+, Apple TV+).
+
+**Provider shortNames** (JustWatch internal): `nfx stn bng prv dnp pmp atp`.
 
 ### Phase γ — Polish (planned)
 
@@ -51,12 +58,21 @@ Data: JustWatch GraphQL adapter (`services/justwatch.ts`) + cache. Click a poste
 - **No language filter on results** — searches default to English. Movies with non-English official trailers may surface alternate-language uploads. Acceptable for v1.
 - **Caching nulls** matters — repeated misses for obscure titles would hammer YouTube otherwise. Wrapper `CachedEntry { id: string \| null }` is the LRU value type.
 
+## JustWatch — gotchas
+
+- **Schema is undocumented and could change without notice.** All field references live in `services/justwatch.ts` so churn is one file. Cache aggressively (1h LRU) so we don't hammer them.
+- **No SLA, no support.** If they ever rate-limit by IP, swap in Watchmode. Adapter shape is generic enough for that swap.
+- **Some titles have no `externalIds.imdbId`** — newer releases or obscure ones. Discover dims those posters and disables clicks rather than guessing.
+- **Provider shortNames are JustWatch-internal** (`nfx`, `stn`, `bng`, etc.). They aren't stable identifiers across other APIs — don't leak them to consumers.
+- **Filter input type is `TitleFilter`** with `packages: [String]`, `genres: [String]`, `objectTypes: [ObjectType]`. The schema is forgiving — pass null filter when no fields apply.
+
 ## Future enhancements
 
-- [ ] JustWatch adapter (Phase β prerequisite)
-- [ ] Discover tab UI (Phase β)
-- [ ] Provider badges (Phase γ)
-- [ ] Recommendations row (Phase γ)
+- [ ] Provider badges on detail modal + search results (Phase γ — show "Available on: Netflix, Stan")
+- [ ] Recommendations row at bottom of detail modal (Phase γ — JustWatch `similarTitles` query)
 - [ ] Multi-region support (UI to switch from AU)
 - [ ] Trailer language preference
 - [ ] Cache trailer embeds in IndexedDB on the client (skip server roundtrip on repeat opens)
+- [ ] Trending row across **all** providers (rather than per-provider) — useful for "everyone's watching this"
+- [ ] Per-genre dedicated rows (e.g. "Best comedies of 2024")
+- [ ] Watch-history-aware "because you watched X" row
