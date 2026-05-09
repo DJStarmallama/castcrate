@@ -50,6 +50,14 @@ The first time you run, macOS will prompt to allow incoming connections — requ
 - YTS rotates domains when one gets seized. The default `YTS_BASE_URL` is the current canonical API host as of 2026-05. If torrent search starts failing with a network error, find an active mirror and override `YTS_BASE_URL` in `.env`.
 - Discovery uses `_googlecast._tcp` mDNS; the Mac and Chromecast must be on the same VLAN/Wi-Fi.
 
+### VPN setup (recommended)
+
+Many home networks block torrent indexers at the DNS level, and ISPs can log torrent traffic. A VPN solves both at once. Mullvad is the recommended pick (€5/month flat, anonymous account, WireGuard).
+
+**Critical when running this app:** in the Mullvad client, enable **Settings → VPN settings → Local network sharing**. Without it, the laptop can't reach Chromecasts on the LAN (192.168.x.x) and casting breaks. Same setting exists in most VPN clients under names like "split tunneling" or "allow LAN".
+
+After connecting, restart `pnpm dev` so Node picks up the new network state.
+
 ## Scripts
 
 | Command | What |
