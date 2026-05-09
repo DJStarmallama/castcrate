@@ -43,8 +43,8 @@ export function Settings({ onClose }: Props) {
         {sys.isPending && <p className="mt-6 text-zinc-500">Loading…</p>}
         {sys.data && (
           <dl className="mt-6 space-y-4">
-            <Row label="TMDB API key">
-              {sys.data.tmdbConfigured ? (
+            <Row label="OMDb API key">
+              {sys.data.omdbConfigured ? (
                 <span className="text-emerald-400">configured</span>
               ) : (
                 <span className="text-amber-400">missing</span>

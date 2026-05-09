@@ -72,7 +72,7 @@ export interface TorrentSession {
 export interface TorrentMeta {
   title: string;
   posterUrl: string | null;
-  tmdbId: number | null;
+  imdbId: string | null;
   resolution: string | null;
   startedAt: string;
 }

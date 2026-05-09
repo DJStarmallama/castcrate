@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { searchMovies, getMovieDetails, TmdbError } from "../services/tmdb.js";
+import { searchMovies, getMovieDetails, OmdbError } from "../services/omdb.js";
 
 export async function moviesRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { q?: string } }>("/api/search/movies", async (req, reply) => {
@@ -9,22 +9,18 @@ export async function moviesRoutes(app: FastifyInstance) {
       const results = await searchMovies(q);
       return { results };
     } catch (err) {
-      if (err instanceof TmdbError) {
+      if (err instanceof OmdbError) {
         return reply.code(err.status).send({ error: err.message });
       }
       throw err;
     }
   });
 
-  app.get<{ Params: { tmdbId: string } }>("/api/movies/:tmdbId", async (req, reply) => {
-    const id = Number(req.params.tmdbId);
-    if (!Number.isFinite(id)) {
-      return reply.code(400).send({ error: "tmdbId must be a number" });
-    }
+  app.get<{ Params: { imdbId: string } }>("/api/movies/:imdbId", async (req, reply) => {
     try {
-      return await getMovieDetails(id);
+      return await getMovieDetails(req.params.imdbId);
     } catch (err) {
-      if (err instanceof TmdbError) {
+      if (err instanceof OmdbError) {
         return reply.code(err.status).send({ error: err.message });
       }
       throw err;

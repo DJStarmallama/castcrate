@@ -4,17 +4,17 @@ import { api } from "../lib/api";
 import { useEscape } from "../hooks/useEscape";
 
 interface Props {
-  tmdbId: number;
+  imdbId: string;
   onClose: () => void;
   onFindAndCast: (movie: MovieDetails) => void;
   findCastEnabled?: boolean;
 }
 
-export function MovieDetail({ tmdbId, onClose, onFindAndCast, findCastEnabled = false }: Props) {
+export function MovieDetail({ imdbId, onClose, onFindAndCast, findCastEnabled = false }: Props) {
   useEscape(onClose);
   const q = useQuery<MovieDetails>({
-    queryKey: ["movie", tmdbId],
-    queryFn: () => api.movieDetails(tmdbId),
+    queryKey: ["movie", imdbId],
+    queryFn: () => api.movieDetails(imdbId),
   });
 
   return (

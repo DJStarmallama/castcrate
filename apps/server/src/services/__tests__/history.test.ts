@@ -24,7 +24,7 @@ const sample = (overrides: Partial<Parameters<typeof appendHistory>[0]> = {}) =>
   id: "id-1",
   title: "Inception",
   posterUrl: null,
-  tmdbId: 27205,
+  imdbId: "tt1375666",
   resolution: "1080p",
   videoName: "Inception.2010.1080p.mp4",
   startedAt: new Date(0).toISOString(),

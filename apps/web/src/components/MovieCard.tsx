@@ -28,7 +28,8 @@ export function MovieCard({ movie, onClick }: Props) {
       <div className="mt-2">
         <h3 className="line-clamp-2 text-sm font-medium text-zinc-100">{movie.title}</h3>
         <p className="text-xs text-zinc-500">
-          {movie.year ?? "—"} · ★ {movie.rating.toFixed(1)}
+          {movie.year ?? "—"}
+          {movie.rating > 0 && ` · ★ ${movie.rating.toFixed(1)}`}
         </p>
       </div>
     </button>

@@ -10,7 +10,7 @@ export interface HistoryEntry {
   id: string;
   title: string;
   posterUrl: string | null;
-  tmdbId: number | null;
+  imdbId: string | null;
   resolution: string | null;
   videoName: string;
   startedAt: string;

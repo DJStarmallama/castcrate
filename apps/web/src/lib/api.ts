@@ -57,7 +57,7 @@ export interface HistoryEntry {
   id: string;
   title: string;
   posterUrl: string | null;
-  tmdbId: number | null;
+  imdbId: string | null;
   resolution: string | null;
   videoName: string;
   startedAt: string;
@@ -67,7 +67,7 @@ export interface HistoryEntry {
 
 export interface SystemCheck {
   ok: boolean;
-  tmdbConfigured: boolean;
+  omdbConfigured: boolean;
   downloadPath: string;
   bufferPercent: number;
 }
@@ -77,7 +77,7 @@ export const api = {
     request<{ results: MovieSearchResult[] }>(
       `/api/search/movies?q=${encodeURIComponent(q)}`,
     ),
-  movieDetails: (tmdbId: number) => request<MovieDetails>(`/api/movies/${tmdbId}`),
+  movieDetails: (imdbId: string) => request<MovieDetails>(`/api/movies/${imdbId}`),
   searchTorrents: (title: string, year?: number) => {
     const url = new URL("/api/search/torrents", window.location.origin);
     url.searchParams.set("title", title);
@@ -88,7 +88,7 @@ export const api = {
     magnet: string;
     title?: string;
     posterUrl?: string | null;
-    tmdbId?: number | null;
+    imdbId?: string | null;
     resolution?: string | null;
   }) =>
     request<StartTorrentResult>("/api/torrent/start", {

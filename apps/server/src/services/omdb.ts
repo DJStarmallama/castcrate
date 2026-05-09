@@ -1,0 +1,189 @@
+import { LRUCache } from "lru-cache";
+import type { MovieDetails, MovieSearchResult } from "@castcrate/shared";
+import { config } from "../lib/config.js";
+
+const OMDB_BASE = "http://www.omdbapi.com/";
+
+const cache = new LRUCache<string, object>({
+  max: 500,
+  ttl: 1000 * 60 * 60,
+});
+
+export class OmdbError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+interface OmdbSearchItem {
+  Title: string;
+  Year: string;
+  imdbID: string;
+  Type: "movie" | "series" | "episode";
+  Poster: string;
+}
+
+interface OmdbSearchResponse {
+  Search?: OmdbSearchItem[];
+  totalResults?: string;
+  Response: "True" | "False";
+  Error?: string;
+}
+
+interface OmdbDetailResponse {
+  Title: string;
+  Year: string;
+  Rated?: string;
+  Released?: string;
+  Runtime?: string;
+  Genre?: string;
+  Director?: string;
+  Writer?: string;
+  Actors?: string;
+  Plot?: string;
+  Poster?: string;
+  Metascore?: string;
+  imdbRating?: string;
+  imdbID: string;
+  Type: string;
+  Response: "True" | "False";
+  Error?: string;
+}
+
+function assertKey(): string {
+  if (!config.omdbApiKey) {
+    throw new OmdbError(
+      "OMDB_API_KEY is not configured. Add it to .env to enable movie search.",
+      503,
+    );
+  }
+  return config.omdbApiKey;
+}
+
+async function omdbFetch<T extends { Response: "True" | "False"; Error?: string }>(
+  params: Record<string, string>,
+): Promise<T> {
+  const key = assertKey();
+  const url = new URL(OMDB_BASE);
+  url.searchParams.set("apikey", key);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+
+  // Strip the apikey from the cache key so logs/inspection are safer.
+  const cacheKey = JSON.stringify(params);
+  const cached = cache.get(cacheKey);
+  if (cached) return cached as T;
+
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { Accept: "application/json" } });
+  } catch (err) {
+    const cause = (err as Error & { cause?: { code?: string } })?.cause;
+    if (cause?.code === "ENOTFOUND" || cause?.code === "EAI_AGAIN") {
+      throw new OmdbError(
+        "Cannot reach omdbapi.com — DNS lookup failed. Check your network.",
+        502,
+      );
+    }
+    throw new OmdbError(`OMDb network error: ${(err as Error).message}`, 502);
+  }
+  if (!res.ok) {
+    throw new OmdbError(`OMDb HTTP ${res.status}`, 502);
+  }
+  const json = (await res.json()) as T;
+  if (json.Response === "False") {
+    const msg = json.Error ?? "OMDb returned no results";
+    if (/invalid api key/i.test(msg)) {
+      throw new OmdbError(
+        "OMDb rejected the API key. If you just signed up, click the activation link in the email OMDb sent you.",
+        401,
+      );
+    }
+    if (/not found|no.*result/i.test(msg)) {
+      // Empty result is not an error; let the caller handle it.
+      return json;
+    }
+    throw new OmdbError(msg, 502);
+  }
+  cache.set(cacheKey, json as object);
+  return json;
+}
+
+function parseYear(year: string | undefined): number | null {
+  if (!year) return null;
+  const y = Number(year.slice(0, 4));
+  return Number.isFinite(y) ? y : null;
+}
+
+function parseRuntime(runtime: string | undefined): number | null {
+  if (!runtime) return null;
+  const m = /^(\d+)/.exec(runtime);
+  return m ? Number(m[1]) : null;
+}
+
+function parseRating(rating: string | undefined): number {
+  if (!rating || rating === "N/A") return 0;
+  const r = Number(rating);
+  return Number.isFinite(r) ? r : 0;
+}
+
+function poster(p: string | undefined): string | null {
+  if (!p || p === "N/A") return null;
+  return p;
+}
+
+function splitList(s: string | undefined): string[] {
+  if (!s || s === "N/A") return [];
+  return s.split(",").map((x) => x.trim()).filter(Boolean);
+}
+
+function searchItemToResult(item: OmdbSearchItem): MovieSearchResult {
+  return {
+    imdbId: item.imdbID,
+    title: item.Title,
+    year: parseYear(item.Year),
+    poster: poster(item.Poster),
+    // OMDb's search response doesn't include rating; the detail call fills it.
+    rating: 0,
+    overview: "",
+  };
+}
+
+function detailToResult(d: OmdbDetailResponse): MovieDetails {
+  return {
+    imdbId: d.imdbID,
+    title: d.Title,
+    year: parseYear(d.Year),
+    poster: poster(d.Poster),
+    rating: parseRating(d.imdbRating),
+    overview: d.Plot && d.Plot !== "N/A" ? d.Plot : "",
+    runtime: parseRuntime(d.Runtime),
+    genres: splitList(d.Genre),
+    cast: splitList(d.Actors).map((name) => ({ name, character: "" })),
+  };
+}
+
+export async function searchMovies(query: string): Promise<MovieSearchResult[]> {
+  if (!query.trim()) return [];
+  const data = await omdbFetch<OmdbSearchResponse>({
+    s: query,
+    type: "movie",
+  });
+  if (!data.Search) return [];
+  return data.Search.map(searchItemToResult);
+}
+
+export async function getMovieDetails(imdbId: string): Promise<MovieDetails> {
+  if (!/^tt\d+$/.test(imdbId)) {
+    throw new OmdbError("invalid IMDb ID", 400);
+  }
+  const data = await omdbFetch<OmdbDetailResponse>({
+    i: imdbId,
+    plot: "full",
+  });
+  if (data.Response === "False") {
+    throw new OmdbError(data.Error ?? "movie not found", 404);
+  }
+  return detailToResult(data);
+}

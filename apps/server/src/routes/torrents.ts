@@ -46,7 +46,7 @@ export async function torrentRoutes(app: FastifyInstance) {
       magnet?: string;
       title?: string;
       posterUrl?: string | null;
-      tmdbId?: number | null;
+      imdbId?: string | null;
       resolution?: string | null;
     };
   }>("/api/torrent/start", async (req, reply) => {
@@ -59,7 +59,7 @@ export async function torrentRoutes(app: FastifyInstance) {
       setMeta(session.infoHash, {
         title: req.body?.title ?? session.name,
         posterUrl: req.body?.posterUrl ?? null,
-        tmdbId: req.body?.tmdbId ?? null,
+        imdbId: req.body?.imdbId ?? null,
         resolution: req.body?.resolution ?? null,
         startedAt: new Date().toISOString(),
       });
@@ -110,7 +110,7 @@ export async function torrentRoutes(app: FastifyInstance) {
             id: randomUUID(),
             title: m.title,
             posterUrl: m.posterUrl,
-            tmdbId: m.tmdbId,
+            imdbId: m.imdbId,
             resolution: m.resolution,
             videoName: status.name,
             startedAt: m.startedAt,

@@ -1,13 +1,13 @@
 # CastCrate
 
-Locally-hosted web app: search a movie via TMDB, find a YTS torrent, stream it as it downloads, and cast it to a Chromecast on your LAN — all from a single UI on your laptop.
+Locally-hosted web app: search a movie via OMDb, find a YTS torrent, stream it as it downloads, and cast it to a Chromecast on your LAN — all from a single UI on your laptop.
 
 See [`castcrate-requirements.md`](./castcrate-requirements.md) for the full PRD and [`castcrate-plan.md`](./castcrate-plan.md) for the phased build plan.
 
 ## What's built
 
 - **Phase 0** — pnpm monorepo (Fastify server + Vite/React 19/Tailwind v4 web)
-- **Phase 1** — TMDB search, debounced title-screen UI, movie detail modal
+- **Phase 1** — OMDb search, debounced title-screen UI, movie detail modal
 - **Phase 2** — YTS torrent search (x264 1080p preferred, 720p fallback), WebTorrent streaming, in-browser playback with HTTP byte-range
 - **Phase 3** — mDNS Chromecast discovery, `castv2-client` integration, cast/stop/pause/play/seek/volume
 - **Phase 4** — Library view (active downloads + history persisted to `~/.castcrate/history.json`), Settings panel, system check
@@ -24,7 +24,7 @@ Deferred to v2: x265 / MKV transcoding pipeline (FFmpeg), subtitles, watch histo
 
 ```bash
 pnpm install
-cp .env.example .env       # then add your TMDB_API_KEY (v4 Read Token)
+cp .env.example .env       # then add your OMDB_API_KEY (free key from omdbapi.com)
 pnpm dev                   # server :3000  +  web :5173
 ```
 
@@ -36,7 +36,7 @@ The first time you run, macOS will prompt to allow incoming connections — requ
 
 | Var | Default | Notes |
 |---|---|---|
-| `TMDB_API_KEY` | _empty_ | Required for movie search. Get one at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api). |
+| `OMDB_API_KEY` | _empty_ | Required for movie search. Free key at [omdbapi.com/apikey.aspx](https://www.omdbapi.com/apikey.aspx) — you'll get an email with both the key and an activation link; click the link before using the key. |
 | `DOWNLOAD_PATH` | `~/Downloads/CastCrate` | Where torrents are saved |
 | `PORT` | `3000` | Server port |
 | `BUFFER_PERCENT` | `2` | Pre-cast buffer threshold |

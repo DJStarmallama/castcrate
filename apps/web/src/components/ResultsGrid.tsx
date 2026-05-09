@@ -13,7 +13,7 @@ export function ResultsGrid({ results, onSelect }: Props) {
   return (
     <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
       {results.map((m) => (
-        <MovieCard key={m.tmdbId} movie={m} onClick={() => onSelect(m)} />
+        <MovieCard key={m.imdbId} movie={m} onClick={() => onSelect(m)} />
       ))}
     </div>
   );

@@ -14,7 +14,7 @@ import { api, ApiError, type StartTorrentResult } from "./lib/api";
 
 export default function App() {
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [findFor, setFindFor] = useState<MovieDetails | null>(null);
   const [session, setSession] = useState<StartTorrentResult | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
@@ -41,7 +41,7 @@ export default function App() {
         magnet: t.magnet,
         title: findFor?.title,
         posterUrl: findFor?.poster ?? null,
-        tmdbId: findFor?.tmdbId ?? null,
+        imdbId: findFor?.imdbId ?? null,
         resolution: t.resolution,
       }),
     onSuccess: (data) => {
@@ -100,7 +100,7 @@ export default function App() {
         {search.data && (
           <ResultsGrid
             results={search.data.results}
-            onSelect={(m: MovieSearchResult) => setSelectedId(m.tmdbId)}
+            onSelect={(m: MovieSearchResult) => setSelectedId(m.imdbId)}
           />
         )}
         {search.data && search.data.results.length === 0 && debounced.trim() && (
@@ -112,7 +112,7 @@ export default function App() {
 
       {selectedId !== null && !findFor && !session && (
         <MovieDetail
-          tmdbId={selectedId}
+          imdbId={selectedId}
           onClose={() => setSelectedId(null)}
           onFindAndCast={(movie) => {
             setFindFor(movie);
@@ -188,10 +188,15 @@ function BlockingNotice({
 function SearchError({ err }: { err: Error }) {
   const isApiError = err instanceof ApiError;
   const isNoKey = isApiError && err.status === 503;
+  const isInvalidKey = isApiError && err.status === 401;
   return (
     <div className="mx-auto max-w-2xl rounded-lg border border-amber-700/40 bg-amber-950/30 p-6 text-amber-200">
       <h3 className="font-semibold">
-        {isNoKey ? "TMDB API key not configured" : "Search failed"}
+        {isNoKey
+          ? "OMDb API key not configured"
+          : isInvalidKey
+            ? "OMDb rejected the API key"
+            : "Search failed"}
       </h3>
       <p className="mt-2 text-sm text-amber-200/80">{err.message}</p>
       {isNoKey && (
@@ -199,13 +204,13 @@ function SearchError({ err }: { err: Error }) {
           Get a free key at{" "}
           <a
             className="underline"
-            href="https://www.themoviedb.org/settings/api"
+            href="https://www.omdbapi.com/apikey.aspx"
             target="_blank"
             rel="noreferrer"
           >
-            themoviedb.org/settings/api
+            omdbapi.com/apikey.aspx
           </a>{" "}
-          and add it to <code>.env</code> as <code>TMDB_API_KEY</code>.
+          and add it to <code>.env</code> as <code>OMDB_API_KEY</code>.
         </p>
       )}
     </div>

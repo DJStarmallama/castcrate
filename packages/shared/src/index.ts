@@ -1,5 +1,5 @@
 export interface MovieSearchResult {
-  tmdbId: number;
+  imdbId: string;
   title: string;
   year: number | null;
   poster: string | null;

@@ -10,7 +10,7 @@ export async function healthRoutes(app: FastifyInstance) {
 
   app.get("/api/system/check", async () => ({
     ok: true,
-    tmdbConfigured: Boolean(config.tmdbApiKey),
+    omdbConfigured: Boolean(config.omdbApiKey),
     downloadPath: config.downloadPath,
     bufferPercent: config.bufferPercent,
   }));
