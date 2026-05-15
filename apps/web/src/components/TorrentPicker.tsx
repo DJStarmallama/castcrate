@@ -16,8 +16,9 @@ export function TorrentPicker({ movie, onClose, onPick }: Props) {
   useEscape(onClose);
 
   const q = useQuery({
-    queryKey: ["torrents", movie.title, movie.year],
-    queryFn: () => api.searchTorrents(movie.title, movie.year ?? undefined),
+    queryKey: ["torrents", movie.title, movie.year, movie.imdbId],
+    queryFn: () =>
+      api.searchTorrents(movie.title, movie.year ?? undefined, movie.imdbId),
   });
 
   return (
