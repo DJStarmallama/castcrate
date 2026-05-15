@@ -156,17 +156,40 @@ export async function validateAddon(url: string): Promise<{
     return { ok: false, error: "Addon manifest is missing required fields (id, name, version, resources)" };
   }
 
+  // Resources can be either an array of strings ["stream", "catalog"] OR an
+  // array of objects [{ name: "stream", types: [...], idPrefixes: [...] }].
+  // The object form lets addons declare per-resource type/id-prefix filters.
+  // Torrentio uses the object form — we accept both.
   const resources = manifest.resources as unknown[];
-  if (!resources.includes("stream")) {
+  const streamResource = resources.find((r) => {
+    if (typeof r === "string") return r === "stream";
+    if (r !== null && typeof r === "object" && "name" in r) {
+      return (r as { name: unknown }).name === "stream";
+    }
+    return false;
+  });
+  if (!streamResource) {
     return { ok: false, error: "addon doesn't expose stream resource" };
   }
 
   // Build optional warning strings for non-fatal advisory conditions.
   const warningParts: string[] = [];
 
-  // If idPrefixes is present and doesn't include "tt", the addon may not handle
-  // IMDb-keyed lookups. Absence of the field means "no constraint" — no warning.
-  if (Array.isArray(manifest.idPrefixes) && !(manifest.idPrefixes as string[]).includes("tt")) {
+  // idPrefixes can live at the manifest top level OR inside the stream
+  // resource object. Check both; an addon that doesn't support "tt" lookups
+  // anywhere should warn the user.
+  const topLevelPrefixes = Array.isArray(manifest.idPrefixes)
+    ? (manifest.idPrefixes as unknown[])
+    : null;
+  const resourcePrefixes =
+    typeof streamResource === "object" &&
+    streamResource !== null &&
+    "idPrefixes" in streamResource &&
+    Array.isArray((streamResource as { idPrefixes: unknown }).idPrefixes)
+      ? ((streamResource as { idPrefixes: unknown[] }).idPrefixes)
+      : null;
+  const effectivePrefixes = resourcePrefixes ?? topLevelPrefixes;
+  if (effectivePrefixes !== null && !effectivePrefixes.includes("tt")) {
     warningParts.push("addon may not support IMDb-keyed (tt…) lookups");
   }
 

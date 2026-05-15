@@ -1,0 +1,18 @@
+{
+  "id": "community.torrentio",
+  "version": "0.0.16",
+  "name": "Torrentio",
+  "resources": [
+    {
+      "name": "stream",
+      "types": ["movie", "series", "anime"],
+      "idPrefixes": ["tt", "kitsu"]
+    }
+  ],
+  "types": ["movie", "series", "anime"],
+  "catalogs": [],
+  "behaviorHints": {
+    "configurable": true,
+    "configurationRequired": false
+  }
+}

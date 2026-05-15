@@ -176,6 +176,71 @@ describe("stremio adapter", () => {
   });
 
   // -------------------------------------------------------------------------
+  // 3b. validateAddon — object-form resources (Torrentio shape)
+  // -------------------------------------------------------------------------
+  describe("validateAddon — object-form resources", () => {
+    it("accepts resources as array of { name } objects (Torrentio shape)", async () => {
+      const manifest = await readFile(
+        join(FIXTURES, "stremio-manifest-object-resources.json"),
+        "utf8",
+      );
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => JSON.parse(manifest),
+      }));
+
+      const result = await validateAddon("https://torrentio.strem.fun/manifest.json");
+
+      expect(result.ok).toBe(true);
+      expect(result.manifest?.name).toBe("Torrentio");
+      // Per-resource idPrefixes contains "tt" → no warning
+      expect(result.warning).toBeUndefined();
+    });
+
+    it("rejects object-form resources without a stream entry", async () => {
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "test",
+          name: "Test",
+          version: "1.0",
+          resources: [
+            { name: "catalog", types: ["movie"] },
+            { name: "meta", types: ["movie"] },
+          ],
+        }),
+      }));
+
+      const result = await validateAddon("https://no-stream.example.com");
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/stream/i);
+    });
+
+    it("warns when per-resource idPrefixes lacks 'tt'", async () => {
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "anime",
+          name: "AnimeOnly",
+          version: "1.0",
+          resources: [
+            { name: "stream", types: ["anime"], idPrefixes: ["kitsu:"] },
+          ],
+        }),
+      }));
+
+      const result = await validateAddon("https://anime.example.com");
+
+      expect(result.ok).toBe(true);
+      expect(result.warning).toMatch(/IMDb/i);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // 4. validateAddon — network error
   // -------------------------------------------------------------------------
   describe("validateAddon — network error", () => {
