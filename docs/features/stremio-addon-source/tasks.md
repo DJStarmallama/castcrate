@@ -75,10 +75,13 @@ Design decision: **direct passthrough** (Option A from implementation.md). Exter
 
 ## Phase 6 — API endpoints (`routes/stremio.ts`)
 
-- [ ] `POST /api/stremio/addons` body `{ url }` → validates manifest, generates id, appends, returns the new entry.
-- [ ] `DELETE /api/stremio/addons/:id` → removes from settings list.
-- [ ] `GET /api/stremio/test/:id` → runs `searchStremioMovie("tt1375666")` (Inception) → returns `{ ok, sampleCount, firstTitle?, error? }`.
-- [ ] Register routes in `index.ts`.
+- [x] `POST /api/stremio/addons` body `{ url }` → validates manifest, generates id, appends, returns the new entry.
+- [x] `DELETE /api/stremio/addons/:id` → removes from settings list.
+- [x] `GET /api/stremio/test/:id` → runs `searchStremioMovie("tt1375666")` (Inception) → returns `{ ok, sampleCount, firstTitle?, error? }`.
+- [x] Register routes in `index.ts`.
+- [x] `maskStremioUrl` helper in `routes/stremio.ts`; applied in `GET /api/settings` and `PATCH /api/settings` responses.
+- [x] `searchStremioMovie`/`searchStremioEpisode` accept optional `enabledAddonsOverride` so `GET /api/stremio/test/:id` can target a single addon.
+- [x] 24 route-level tests in `routes/__tests__/stremio.test.ts` — all pass.
 
 ## Phase 7 — UI
 

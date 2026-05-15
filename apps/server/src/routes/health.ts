@@ -6,6 +6,7 @@ import {
   updateSettings,
   type RuntimeSettings,
 } from "../services/settings.js";
+import { maskStremioUrl } from "./stremio.js";
 
 export async function healthRoutes(app: FastifyInstance) {
   app.get("/api/ping", async () => ({
@@ -36,7 +37,7 @@ export async function healthRoutes(app: FastifyInstance) {
 
   app.get("/api/settings", async () => {
     const s = getSettings();
-    // Mask sensitive TorrentDay credentials — server-internal only.
+    // Mask sensitive credentials — server-internal values only.
     return {
       ...s,
       torrentDay: {
@@ -44,6 +45,12 @@ export async function healthRoutes(app: FastifyInstance) {
         uid: s.torrentDay.uid !== null ? "***" : null,
         pass: s.torrentDay.pass !== null ? "***" : null,
       },
+      // Stremio addon URLs may contain personalised secrets (e.g. Real-Debrid
+      // API keys in the path). Expose the host only so users can identify addons.
+      stremioAddons: s.stremioAddons.map((a) => ({
+        ...a,
+        url: maskStremioUrl(a.url),
+      })),
     };
   });
 
@@ -51,7 +58,7 @@ export async function healthRoutes(app: FastifyInstance) {
     "/api/settings",
     async (req) => {
       const updated = await updateSettings(req.body ?? {});
-      // Mask sensitive TorrentDay credentials in the response.
+      // Mask sensitive credentials in the response.
       return {
         ...updated,
         torrentDay: {
@@ -59,6 +66,10 @@ export async function healthRoutes(app: FastifyInstance) {
           uid: updated.torrentDay.uid !== null ? "***" : null,
           pass: updated.torrentDay.pass !== null ? "***" : null,
         },
+        stremioAddons: updated.stremioAddons.map((a) => ({
+          ...a,
+          url: maskStremioUrl(a.url),
+        })),
       };
     },
   );

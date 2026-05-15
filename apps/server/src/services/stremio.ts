@@ -413,11 +413,15 @@ async function fanOut(
 // Public search API
 // ---------------------------------------------------------------------------
 
-export async function searchStremioMovie(imdbId: string): Promise<StremioSearchOutcome> {
+export async function searchStremioMovie(
+  imdbId: string,
+  enabledAddonsOverride?: Array<{ id: string; url: string; name: string; enabled: boolean }>,
+): Promise<StremioSearchOutcome> {
   if (!imdbId) return { results: [], errors: [] };
 
-  const settings = getSettings();
-  const enabledAddons = settings.stremioAddons.filter((a) => a.enabled);
+  const enabledAddons =
+    enabledAddonsOverride ??
+    getSettings().stremioAddons.filter((a) => a.enabled);
   if (enabledAddons.length === 0) return { results: [], errors: [] };
 
   console.log(`stremio: search imdb=${imdbId} via=${enabledAddons.length} addons`);
@@ -435,11 +439,13 @@ export async function searchStremioEpisode(
   imdbId: string,
   season: number,
   episode: number,
+  enabledAddonsOverride?: Array<{ id: string; url: string; name: string; enabled: boolean }>,
 ): Promise<StremioSearchOutcome> {
   if (!imdbId) return { results: [], errors: [] };
 
-  const settings = getSettings();
-  const enabledAddons = settings.stremioAddons.filter((a) => a.enabled);
+  const enabledAddons =
+    enabledAddonsOverride ??
+    getSettings().stremioAddons.filter((a) => a.enabled);
   if (enabledAddons.length === 0) return { results: [], errors: [] };
 
   console.log(`stremio: search imdb=${imdbId} s=${season} e=${episode} via=${enabledAddons.length} addons`);

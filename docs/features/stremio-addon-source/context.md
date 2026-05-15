@@ -1,7 +1,7 @@
 # stremio-addon-source — Context
 
 **Last updated:** 2026-05-15
-**Status:** Phases 1 + 2 + 3 + 4 + 5 complete; Phases 6–9 pending
+**Status:** Phases 1 + 2 + 3 + 4 + 5 + 6 complete; Phases 7–9 pending
 
 ## Implementation notes
 
@@ -16,6 +16,14 @@
 - Movie route now accepts optional `?imdbId` query param. Invalid formats (not matching `/^tt\d{5,}$/`) are logged at `warn` level and treated as absent — the request is not rejected.
 - Episode route already had `imdbId` as a required param (used by EZTV). Stremio is slotted after EZTV episode results and before the Knaben episode fallback. No changes to the existing EZTV/Knaben/TD wiring.
 - `getSettings` imported directly into `routes/torrents.ts` (was not previously imported there) to read `stremioAddons` for the availability check.
+
+### Phase 6 decisions
+- `searchStremioMovie` and `searchStremioEpisode` accept an optional `enabledAddonsOverride` parameter (array of addon objects). When provided it bypasses the `getSettings()` read and uses the supplied list directly. The parameter is additive (optional) so existing callers in `routes/torrents.ts` are unchanged.
+- `GET /api/stremio/test/:id` passes `[addon]` as the override to target exactly one addon in the Inception canary search.
+- `maskStremioUrl(url)` is exported from `routes/stremio.ts` (not from the service layer) because it is a presentation concern. `health.ts` imports and applies it in both `GET /api/settings` and `PATCH /api/settings` responses. Server-internal `getSettings()` continues to return raw URLs.
+- `POST /api/stremio/addons` logs the host component of the addon URL only (never the path) to avoid leaking personalised secrets to the log stream.
+- `vi.clearAllMocks()` (not `vi.resetAllMocks()`) is used in route tests — `resetAllMocks` would wipe the `normaliseAddonBase` mock implementation, breaking normalisation assertions.
+- 24 new tests in `routes/__tests__/stremio.test.ts`. All 214 server tests pass.
 
 ### Phase 5 decisions
 - **Direct passthrough chosen (Option A).** HTTP streams from debrid CDNs are passed unchanged to the Chromecast/video element. No server-side proxy or transcode. Rationale: avoids doubling LAN bandwidth; debrid CDNs are CORS- and Chromecast-friendly; transcode from a URL input is deferred work.
