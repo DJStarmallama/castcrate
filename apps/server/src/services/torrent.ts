@@ -110,7 +110,10 @@ export function setMetaSelectedFile(infoHash: string, index: number): void {
   if (m) m.selectedFileIndex = index;
 }
 
-export async function startTorrent(input: string | Buffer): Promise<TorrentSession> {
+export async function startTorrent(
+  input: string | Buffer,
+  opts?: { fileIdx?: number },
+): Promise<TorrentSession> {
   const client = await getClient();
 
   // Best-effort fast path for magnet strings — skip for Buffer inputs and let
@@ -140,7 +143,26 @@ export async function startTorrent(input: string | Buffer): Promise<TorrentSessi
     // required for in-progress playback and byte-range requests to work.
     client.add(input, { path: config.downloadPath, sequentialDownload: true }, (torrent) => {
       const finalize = () => {
-        const file = pickVideoFile(torrent.files);
+        let file: WtFile | null = null;
+
+        // Honour an explicit fileIdx when provided and in range.
+        const fileIdx = opts?.fileIdx;
+        if (typeof fileIdx === "number") {
+          if (fileIdx >= 0 && fileIdx < torrent.files.length) {
+            file = torrent.files[fileIdx] ?? null;
+          } else {
+            // Out of range — warn and fall through to heuristic.
+            console.warn(
+              `startTorrent: fileIdx ${fileIdx} is out of range (torrent has ${torrent.files.length} files) — falling back to largest video file`,
+            );
+          }
+        }
+
+        // Fall back to heuristic when fileIdx is absent or was out of range.
+        if (!file) {
+          file = pickVideoFile(torrent.files);
+        }
+
         if (!file) {
           clearTimeout(timeout);
           reject(new Error("No video file found in torrent"));

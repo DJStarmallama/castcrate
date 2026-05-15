@@ -26,6 +26,7 @@ import {
   searchStremioEpisode,
   FALLBACK_TRACKERS,
   _clearCache,
+  type StremioSearchOutcome,
 } from "../stremio.js";
 import { getSettings } from "../settings.js";
 
@@ -214,7 +215,7 @@ describe("stremio adapter", () => {
       const fetchSpy = vi.fn();
       vi.stubGlobal("fetch", fetchSpy);
 
-      const results = await searchStremioMovie("tt1375666");
+      const { results } = await searchStremioMovie("tt1375666");
 
       expect(results).toEqual([]);
       expect(fetchSpy).not.toHaveBeenCalled();
@@ -228,7 +229,7 @@ describe("stremio adapter", () => {
       const fetchSpy = vi.fn();
       vi.stubGlobal("fetch", fetchSpy);
 
-      const results = await searchStremioMovie("");
+      const { results } = await searchStremioMovie("");
 
       expect(results).toEqual([]);
       expect(fetchSpy).not.toHaveBeenCalled();
@@ -253,7 +254,7 @@ describe("stremio adapter", () => {
         json: async () => JSON.parse(movieStreamsFixture),
       }));
 
-      const results = await searchStremioMovie("tt0816692");
+      const { results } = await searchStremioMovie("tt0816692");
 
       expect(results).toHaveLength(2);
     });
@@ -265,7 +266,7 @@ describe("stremio adapter", () => {
         json: async () => JSON.parse(movieStreamsFixture),
       }));
 
-      const results = await searchStremioMovie("tt0816692");
+      const { results } = await searchStremioMovie("tt0816692");
       const httpResult = results.find((r) => r.streamUrl);
 
       expect(httpResult).toBeDefined();
@@ -280,7 +281,7 @@ describe("stremio adapter", () => {
         json: async () => JSON.parse(movieStreamsFixture),
       }));
 
-      const results = await searchStremioMovie("tt0816692");
+      const { results } = await searchStremioMovie("tt0816692");
       const magnetResult = results.find((r) => r.magnet && r.magnet.startsWith("magnet:"));
 
       expect(magnetResult).toBeDefined();
@@ -295,7 +296,7 @@ describe("stremio adapter", () => {
         json: async () => JSON.parse(movieStreamsFixture),
       }));
 
-      const results = await searchStremioMovie("tt0816692");
+      const { results } = await searchStremioMovie("tt0816692");
 
       for (const r of results) {
         expect(r.source).toBe("stremio");
@@ -310,7 +311,7 @@ describe("stremio adapter", () => {
         json: async () => JSON.parse(movieStreamsFixture),
       }));
 
-      const results = await searchStremioMovie("tt0816692");
+      const { results } = await searchStremioMovie("tt0816692");
       const magnetResult = results.find((r) => r.magnet && r.magnet.startsWith("magnet:"));
 
       expect(magnetResult!.fileIdx).toBe(0);
@@ -335,7 +336,7 @@ describe("stremio adapter", () => {
         json: async () => JSON.parse(movieStreamsFixture),
       }));
 
-      const results = await searchStremioMovie("tt0816692");
+      const { results } = await searchStremioMovie("tt0816692");
       const magnetResult = results.find((r) => r.magnet && r.magnet.startsWith("magnet:"));
 
       // The fixture has tracker:udp://tracker.opentrackr.org:1337/announce
@@ -360,7 +361,7 @@ describe("stremio adapter", () => {
         json: async () => streamNoSources,
       }));
 
-      const results = await searchStremioMovie("tt1375666");
+      const { results } = await searchStremioMovie("tt1375666");
 
       expect(results).toHaveLength(1);
       // Should contain fallback tracker
@@ -387,7 +388,7 @@ describe("stremio adapter", () => {
         json: async () => streamDhtOnly,
       }));
 
-      const results = await searchStremioMovie("tt9999999");
+      const { results } = await searchStremioMovie("tt9999999");
 
       expect(results).toHaveLength(1);
       expect(results[0]!.magnet).toContain(
@@ -429,7 +430,7 @@ describe("stremio adapter", () => {
         },
       }));
 
-      const results = await searchStremioMovie("tt1375666");
+      const { results } = await searchStremioMovie("tt1375666");
 
       // Should be deduped to 1 result
       expect(results).toHaveLength(1);
@@ -454,7 +455,7 @@ describe("stremio adapter", () => {
         }),
       }));
 
-      const results = await searchStremioMovie("tt2222222");
+      const { results } = await searchStremioMovie("tt2222222");
 
       expect(results).toHaveLength(1);
       expect(results[0]!.addonOrigin).toBe("First Addon");
@@ -497,13 +498,18 @@ describe("stremio adapter", () => {
         };
       });
 
-      const results = await searchStremioMovie("tt1375666");
+      const { results, errors } = await searchStremioMovie("tt1375666");
 
       // Should get 2 results from the working addon, none from the broken one
       expect(results).toHaveLength(2);
       for (const r of results) {
         expect(r.addonOrigin).toBe("Working Addon");
       }
+      // Broken addon should produce one error entry
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.addonId).toBe("c1");
+      expect(errors[0]!.addonName).toBe("Broken Addon");
+      expect(errors[0]!.code).toBe("fetch");
     });
   });
 
@@ -527,9 +533,11 @@ describe("stremio adapter", () => {
         };
       });
 
-      await searchStremioEpisode("tt0903747", 1, 5);
+      const outcome = await searchStremioEpisode("tt0903747", 1, 5);
 
       expect(calledUrls[0]).toContain("/stream/series/tt0903747:1:5.json");
+      expect(outcome.results).toEqual([]);
+      expect(outcome.errors).toEqual([]);
     });
   });
 });

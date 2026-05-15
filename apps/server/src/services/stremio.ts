@@ -318,75 +318,102 @@ function dedupeResults(results: StremioStreamResult[]): StremioStreamResult[] {
 }
 
 // ---------------------------------------------------------------------------
+// Public return shape
+// ---------------------------------------------------------------------------
+
+export interface StremioSearchOutcome {
+  results: StremioStreamResult[];
+  errors: Array<{ addonId: string; addonName: string; code: "fetch" | "timeout" | "invalid" }>;
+}
+
+// ---------------------------------------------------------------------------
 // Fan-out search
 // ---------------------------------------------------------------------------
 
-async function fanOut(path: string): Promise<StremioStreamResult[]> {
-  const settings = getSettings();
-  const enabledAddons = settings.stremioAddons.filter((a) => a.enabled);
-
-  if (enabledAddons.length === 0) {
-    return [];
-  }
-
-  const dispatcher = getDispatcher("stremio") as Dispatcher | undefined;
-  const proxyTag = dispatcher ? "on" : "off";
-  const hash = addonsHash(enabledAddons);
-
-  // Check cache
-  const cacheKey = `${path}::${hash}::proxy:${proxyTag}`;
+async function fanOut(
+  path: string,
+  enabledAddons: Array<{ id: string; url: string; name: string; enabled: boolean }>,
+  dispatcher: Dispatcher | undefined,
+  cacheKey: string,
+): Promise<StremioSearchOutcome> {
+  // Check cache — cache only stores the result list (errors are transient)
   const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) return { results: cached, errors: [] };
 
   const settledResults = await Promise.allSettled(
     enabledAddons.map((addon) => callOneAddon(addon.url, addon.name, path, dispatcher)),
   );
 
   const allResults: StremioStreamResult[] = [];
-  for (const result of settledResults) {
+  const errors: StremioSearchOutcome["errors"] = [];
+
+  for (let i = 0; i < settledResults.length; i++) {
+    const result = settledResults[i]!;
+    const addon = enabledAddons[i]!;
     if (result.status === "fulfilled") {
       allResults.push(...result.value);
+    } else {
+      // Classify the error reason into a code.
+      const msg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      let code: "fetch" | "timeout" | "invalid" = "fetch";
+      if (msg.includes("timeout") || msg.includes("TimeoutError") || msg.includes("AbortError")) {
+        code = "timeout";
+      } else if (msg.includes("invalid JSON") || msg.includes("Invalid JSON")) {
+        code = "invalid";
+      }
+      errors.push({ addonId: addon.id, addonName: addon.name, code });
     }
-    // Rejected addons are already logged inside callOneAddon — skip silently
   }
 
   const deduped = dedupeResults(allResults);
   deduped.sort(rankTorrent);
 
   cache.set(cacheKey, deduped);
-  return deduped;
+  return { results: deduped, errors };
 }
 
 // ---------------------------------------------------------------------------
 // Public search API
 // ---------------------------------------------------------------------------
 
-export async function searchStremioMovie(imdbId: string): Promise<StremioStreamResult[]> {
-  if (!imdbId) return [];
+export async function searchStremioMovie(imdbId: string): Promise<StremioSearchOutcome> {
+  if (!imdbId) return { results: [], errors: [] };
 
   const settings = getSettings();
   const enabledAddons = settings.stremioAddons.filter((a) => a.enabled);
-  if (enabledAddons.length === 0) return [];
+  if (enabledAddons.length === 0) return { results: [], errors: [] };
 
   console.log(`stremio: search imdb=${imdbId} via=${enabledAddons.length} addons`);
 
-  return fanOut(`/stream/movie/${encodeURIComponent(imdbId)}.json`);
+  const dispatcher = getDispatcher("stremio") as Dispatcher | undefined;
+  const proxyTag = dispatcher ? "on" : "off";
+  const hash = addonsHash(enabledAddons);
+  const path = `/stream/movie/${encodeURIComponent(imdbId)}.json`;
+  const cacheKey = `${path}::${hash}::proxy:${proxyTag}`;
+
+  return fanOut(path, enabledAddons, dispatcher, cacheKey);
 }
 
 export async function searchStremioEpisode(
   imdbId: string,
   season: number,
   episode: number,
-): Promise<StremioStreamResult[]> {
-  if (!imdbId) return [];
+): Promise<StremioSearchOutcome> {
+  if (!imdbId) return { results: [], errors: [] };
 
   const settings = getSettings();
   const enabledAddons = settings.stremioAddons.filter((a) => a.enabled);
-  if (enabledAddons.length === 0) return [];
+  if (enabledAddons.length === 0) return { results: [], errors: [] };
 
   console.log(`stremio: search imdb=${imdbId} s=${season} e=${episode} via=${enabledAddons.length} addons`);
 
-  return fanOut(`/stream/series/${encodeURIComponent(imdbId)}:${season}:${episode}.json`);
+  const dispatcher = getDispatcher("stremio") as Dispatcher | undefined;
+  const proxyTag = dispatcher ? "on" : "off";
+  const hash = addonsHash(enabledAddons);
+  const path = `/stream/series/${encodeURIComponent(imdbId)}:${season}:${episode}.json`;
+  const cacheKey = `${path}::${hash}::proxy:${proxyTag}`;
+
+  return fanOut(path, enabledAddons, dispatcher, cacheKey);
 }
 
 export { FALLBACK_TRACKERS };

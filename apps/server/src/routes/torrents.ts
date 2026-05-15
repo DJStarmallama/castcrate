@@ -17,6 +17,11 @@ import {
   TorrentDayAuthError,
 } from "../services/torrentday.js";
 import {
+  searchStremioMovie,
+  searchStremioEpisode,
+} from "../services/stremio.js";
+import { getSettings } from "../services/settings.js";
+import {
   startTorrent,
   getStatus,
   getVideoFile,
@@ -78,7 +83,7 @@ function extToMime(name: string): string {
 }
 
 export async function torrentRoutes(app: FastifyInstance) {
-  app.get<{ Querystring: { title?: string; year?: string } }>(
+  app.get<{ Querystring: { title?: string; year?: string; imdbId?: string } }>(
     "/api/search/torrents",
     async (req, reply) => {
       const title = (req.query.title ?? "").trim();
@@ -86,8 +91,16 @@ export async function torrentRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "title is required" });
       }
       const year = req.query.year ? Number(req.query.year) : undefined;
+
+      // imdbId is optional — validate format; treat invalid values as absent.
+      let imdbId: string | undefined = (req.query.imdbId ?? "").trim() || undefined;
+      if (imdbId && !/^tt\d{5,}$/.test(imdbId)) {
+        req.log.warn({ imdbId }, "stremio: imdbId query param has invalid format — ignoring");
+        imdbId = undefined;
+      }
+
       const tried: string[] = [];
-      const errors: Array<string | { source: string; code: string }> = [];
+      const errors: Array<string | { source: string; code: string; addonId?: string; addonName?: string }> = [];
       let results: TorrentResult[] = [];
       try {
         tried.push("yts");
@@ -95,6 +108,26 @@ export async function torrentRoutes(app: FastifyInstance) {
       } catch (err) {
         errors.push(`yts: ${(err as Error).message}`);
       }
+
+      // Stremio — slot between YTS and Knaben; only when imdbId is present and
+      // at least one addon is enabled.
+      if (results.length === 0) {
+        const stremioEnabled =
+          imdbId !== undefined &&
+          getSettings().stremioAddons.some((a) => a.enabled);
+
+        if (stremioEnabled && imdbId) {
+          tried.push("stremio");
+          const outcome = await searchStremioMovie(imdbId);
+          if (outcome.results.length > 0) {
+            results = outcome.results;
+          }
+          for (const e of outcome.errors) {
+            errors.push({ source: "stremio", addonId: e.addonId, addonName: e.addonName, code: e.code });
+          }
+        }
+      }
+
       if (results.length === 0) {
         try {
           tried.push("knaben");
@@ -140,7 +173,7 @@ export async function torrentRoutes(app: FastifyInstance) {
       });
     }
     const tried: string[] = [];
-    const errors: Array<string | { source: string; code: string }> = [];
+    const errors: Array<string | { source: string; code: string; addonId?: string; addonName?: string }> = [];
     let episodeResults: TorrentResult[] = [];
     let packResults: TorrentResult[] = [];
 
@@ -152,6 +185,21 @@ export async function torrentRoutes(app: FastifyInstance) {
       ]);
     } catch (err) {
       errors.push(`eztv: ${(err as Error).message}`);
+    }
+
+    // Stremio — slot between EZTV and Knaben for episode results.
+    if (episodeResults.length === 0) {
+      const stremioEnabled = getSettings().stremioAddons.some((a) => a.enabled);
+      if (stremioEnabled) {
+        if (!tried.includes("stremio")) tried.push("stremio");
+        const outcome = await searchStremioEpisode(imdbId, season, episode);
+        if (outcome.results.length > 0) {
+          episodeResults = outcome.results;
+        }
+        for (const e of outcome.errors) {
+          errors.push({ source: "stremio", addonId: e.addonId, addonName: e.addonName, code: e.code });
+        }
+      }
     }
 
     if (episodeResults.length === 0 && title) {

@@ -1,9 +1,21 @@
 # stremio-addon-source — Context
 
 **Last updated:** 2026-05-15
-**Status:** Phases 1 + 2 complete; Phases 3–9 pending
+**Status:** Phases 1 + 2 + 3 + 4 complete; Phases 5–9 pending
 
 ## Implementation notes
+
+### Phase 3 decisions
+- `startTorrent` extended with optional `opts?: { fileIdx?: number }`. When `fileIdx` is present and in range it picks that file directly. When it is absent or out of range it falls through to `pickVideoFile()`. Out-of-range logs a `console.warn` (not a throw) to keep the torrent boot path resilient.
+- The fast-path dedup branch (checking `client.torrents` by infoHash) does not change — it still calls `pickVideoFile()` unconditionally. This is intentional: the fast path is triggered when the same magnet is already downloading, which is not the Stremio scenario (Stremio results each get a fresh `startTorrent` call).
+
+### Phase 4 decisions
+- `searchStremioMovie` / `searchStremioEpisode` now return `StremioSearchOutcome { results, errors }`. Breaking change to adapter API — all tests updated accordingly.
+- Per-addon errors use an extended error-entry shape `{ source: "stremio", addonId, addonName, code }`. The existing per-source shape `{ source, code }` is a strict subset of this; both shapes coexist in the `errors[]` array via a widened type union. No reshaping of existing TD/Knaben entries was needed.
+- `fanOut` was refactored: moved dispatcher construction and cache key computation into `searchStremioMovie`/`searchStremioEpisode` so they can pass these as arguments, keeping the function testable without double-calling `getSettings()`.
+- Movie route now accepts optional `?imdbId` query param. Invalid formats (not matching `/^tt\d{5,}$/`) are logged at `warn` level and treated as absent — the request is not rejected.
+- Episode route already had `imdbId` as a required param (used by EZTV). Stremio is slotted after EZTV episode results and before the Knaben episode fallback. No changes to the existing EZTV/Knaben/TD wiring.
+- `getSettings` imported directly into `routes/torrents.ts` (was not previously imported there) to read `stremioAddons` for the availability check.
 
 ### Phase 1 decisions
 - `sanitise()` in `settings.ts` does whole-array replace for `stremioAddons` — entries with invalid urls or empty ids are filtered out silently, consistent with how other fields are handled.

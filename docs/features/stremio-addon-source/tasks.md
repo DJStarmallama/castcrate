@@ -29,15 +29,15 @@
 
 ## Phase 3 — Torrent client integration (`services/torrent.ts`)
 
-- [ ] `startTorrent(input, opts?: { fileIdx?: number })` — honour `fileIdx` when provided; fall back to `pickVideoFile()` when absent.
+- [x] `startTorrent(input, opts?: { fileIdx?: number })` — honour `fileIdx` when provided; fall back to `pickVideoFile()` when absent.
 
 ## Phase 4 — Fallback wiring (`routes/torrents.ts`)
 
-- [ ] Movie search route accepts new optional `imdbId` query param. Web client already has imdbId; thread it through.
-- [ ] Movie route fallback chain: YTS → Stremio (if imdbId + enabled addons) → Knaben → TD.
-- [ ] Episode route fallback chain: EZTV → Stremio (if imdbId) → Knaben → TD.
-- [ ] `tried` array gets `"stremio"` when invoked.
-- [ ] Per-addon errors captured in errors array without failing the chain.
+- [x] Movie search route accepts new optional `imdbId` query param. Web client already has imdbId; thread it through.
+- [x] Movie route fallback chain: YTS → Stremio (if imdbId + enabled addons) → Knaben → TD.
+- [x] Episode route fallback chain: EZTV → Stremio (if imdbId) → Knaben → TD.
+- [x] `tried` array gets `"stremio"` when invoked.
+- [x] Per-addon errors captured in errors array without failing the chain.
 
 ## Phase 5 — Stream pipeline (`routes/torrents.ts`)
 
