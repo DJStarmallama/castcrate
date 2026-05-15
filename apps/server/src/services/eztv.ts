@@ -1,5 +1,7 @@
 import { LRUCache } from "lru-cache";
 import type { TorrentResult } from "@castcrate/shared";
+import type { RequestInit as UndiciRequestInit } from "undici";
+import { getDispatcher } from "../lib/proxy.js";
 
 const EZTV_BASE = process.env.EZTV_BASE_URL ?? "https://eztvx.to/api";
 
@@ -148,7 +150,9 @@ export function toResult(t: EztvTorrent): TorrentResult | null {
 async function fetchAllTorrents(imdbId: string): Promise<EztvTorrent[]> {
   // Strip "tt" prefix; EZTV expects bare numeric ID.
   const numericId = imdbId.replace(/^tt/, "");
-  const cached = cache.get(numericId);
+  const dispatcher = getDispatcher("eztv");
+  const cacheKey = `${numericId}::proxy:${dispatcher ? "on" : "off"}`;
+  const cached = cache.get(cacheKey);
   if (cached) return cached;
 
   const all: EztvTorrent[] = [];
@@ -163,7 +167,7 @@ async function fetchAllTorrents(imdbId: string): Promise<EztvTorrent[]> {
 
     let res: Response;
     try {
-      res = await fetch(url, { headers: { Accept: "application/json" } });
+      res = await fetch(url, { headers: { Accept: "application/json" }, dispatcher } as UndiciRequestInit as unknown as RequestInit);
     } catch (err) {
       const cause = (err as Error & { cause?: { code?: string } })?.cause;
       if (cause?.code === "ENOTFOUND" || cause?.code === "EAI_AGAIN") {
@@ -184,7 +188,7 @@ async function fetchAllTorrents(imdbId: string): Promise<EztvTorrent[]> {
     if (batch.length < PAGE_SIZE) break;
   }
 
-  cache.set(numericId, all);
+  cache.set(cacheKey, all);
   return all;
 }
 

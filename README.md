@@ -58,6 +58,20 @@ Many home networks block torrent indexers at the DNS level, and ISPs can log tor
 
 After connecting, restart `pnpm dev` so Node picks up the new network state.
 
+### Geo-blocked indexers (proxy routing)
+
+If you'd rather not run a full system VPN, you can route **only** the indexer search requests (YTS / EZTV / Knaben / TorrentDay) through a SOCKS5 or HTTP proxy. Everything else — OMDb, JustWatch, Chromecast discovery, BitTorrent peer traffic — keeps using the direct route.
+
+Configure in **Settings → Network**:
+
+1. Paste a proxy URL — `socks5h://user:pass@host:1080` (use `socks5h://` not `socks5://` so DNS is resolved through the proxy, not your ISP).
+2. Tick the providers that need it (default: all off).
+3. Hit **Test** per provider — confirms the egress IP differs from your direct IP.
+
+Providers that expose a SOCKS5 endpoint suitable for this: **Mullvad**, **ProtonVPN** (paid), **AirVPN**. The proxy URL can also be set via the `PROXY_URL` env var as a default.
+
+> ⚠️ This proxies indexer HTTP only. **BitTorrent peer connections are not proxied** — they run direct from your IP. If you need anonymity at the peer layer, run a full VPN (see above) instead.
+
 ## Scripts
 
 | Command | What |

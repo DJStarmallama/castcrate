@@ -8,19 +8,49 @@ const DIR = join(homedir(), ".castcrate");
 const PATH = join(DIR, "settings.json");
 const TMP_PATH = `${PATH}.tmp`;
 
+export interface ProxyEnabled {
+  yts: boolean;
+  eztv: boolean;
+  knaben: boolean;
+  torrentday: boolean;
+}
+
 export interface RuntimeSettings {
   bufferPercent: number;
   transcodeBufferPercent: number;
   transcodeBitrate: string;
+  /** SOCKS5 / HTTP proxy URL used for per-provider outbound requests.
+   *  null means no proxy configured. */
+  proxyUrl: string | null;
+  /** Per-provider opt-in. Defaults: all false. */
+  proxyEnabled: ProxyEnabled;
 }
 
 const ALLOWED_KEYS: ReadonlyArray<keyof RuntimeSettings> = [
   "bufferPercent",
   "transcodeBufferPercent",
   "transcodeBitrate",
+  "proxyUrl",
+  "proxyEnabled",
 ];
 
+const PROXY_URL_RE = /^(socks5h?|http|https):\/\/.+/;
+
+const PROXY_ENABLED_DEFAULTS: ProxyEnabled = {
+  yts: false,
+  eztv: false,
+  knaben: false,
+  torrentday: false,
+};
+
 let overrides: Partial<RuntimeSettings> = {};
+
+/** Callback list invoked after settings are persisted — used by proxy cache invalidation. */
+const onUpdateCallbacks: Array<() => void> = [];
+
+export function onSettingsUpdate(cb: () => void): void {
+  onUpdateCallbacks.push(cb);
+}
 
 async function ensureDir(): Promise<void> {
   if (!existsSync(DIR)) await mkdir(DIR, { recursive: true });
@@ -61,21 +91,57 @@ export function getSettings(): RuntimeSettings {
     transcodeBufferPercent:
       overrides.transcodeBufferPercent ?? config.transcodeBufferPercent,
     transcodeBitrate: overrides.transcodeBitrate ?? config.transcodeBitrate,
+    proxyUrl: overrides.proxyUrl !== undefined ? overrides.proxyUrl : (config.proxyUrl ?? null),
+    proxyEnabled: overrides.proxyEnabled
+      ? { ...PROXY_ENABLED_DEFAULTS, ...overrides.proxyEnabled }
+      : { ...PROXY_ENABLED_DEFAULTS },
   };
 }
 
 export async function updateSettings(
   partial: Partial<RuntimeSettings>,
 ): Promise<RuntimeSettings> {
-  const next = { ...overrides, ...sanitise(partial) };
-  // null/undefined explicitly resets to env default
+  const sanitised = sanitise(partial);
+  const next: Partial<RuntimeSettings> = { ...overrides };
+
+  // Simple scalar fields: null/undefined explicitly resets to env default.
   for (const k of ALLOWED_KEYS) {
-    if (partial[k] === null || partial[k] === undefined) {
-      delete next[k];
+    if (k === "proxyUrl") {
+      if ("proxyUrl" in partial) {
+        // explicit null clears; valid string sets; invalid string was already
+        // dropped by sanitise(), so leave unchanged if not in sanitised.
+        if (partial.proxyUrl === null) {
+          next.proxyUrl = null;
+        } else if (sanitised.proxyUrl !== undefined) {
+          next.proxyUrl = sanitised.proxyUrl;
+        }
+      }
+    } else if (k === "proxyEnabled") {
+      if (partial.proxyEnabled !== undefined && sanitised.proxyEnabled !== undefined) {
+        // Partial merge — only update the keys present in the patch.
+        next.proxyEnabled = {
+          ...PROXY_ENABLED_DEFAULTS,
+          ...overrides.proxyEnabled,
+          ...sanitised.proxyEnabled,
+        };
+      }
+    } else {
+      // Regular scalar keys
+      const key = k as Exclude<keyof RuntimeSettings, "proxyUrl" | "proxyEnabled">;
+      if (partial[key] === null || partial[key] === undefined) {
+        delete next[key];
+      } else if (sanitised[key] !== undefined) {
+        (next as Record<string, unknown>)[key] = sanitised[key];
+      }
     }
   }
+
   overrides = next;
   await persist();
+
+  // Notify listeners (e.g. proxy dispatcher cache invalidation).
+  for (const cb of onUpdateCallbacks) cb();
+
   return getSettings();
 }
 
@@ -103,5 +169,30 @@ function sanitise(input: Partial<RuntimeSettings>): Partial<RuntimeSettings> {
     // accept 5M, 4500k, 1500000 — same forms transcoder.ts already understands
     if (/^\d+(?:\.\d+)?[kKmM]?$/.test(s)) out.transcodeBitrate = s;
   }
+
+  // proxyUrl: null clears; string must match the scheme regex.
+  if ("proxyUrl" in input) {
+    if (input.proxyUrl === null) {
+      out.proxyUrl = null;
+    } else if (typeof input.proxyUrl === "string" && PROXY_URL_RE.test(input.proxyUrl)) {
+      out.proxyUrl = input.proxyUrl;
+    }
+    // invalid string → silently dropped (caller checked via ALLOWED_KEYS loop)
+  }
+
+  // proxyEnabled: accept partial objects — coerce each recognised key to boolean.
+  if (input.proxyEnabled !== null && typeof input.proxyEnabled === "object") {
+    const pe = input.proxyEnabled as unknown as Record<string, unknown>;
+    const sanitisedPe: Partial<ProxyEnabled> = {};
+    for (const key of Object.keys(PROXY_ENABLED_DEFAULTS) as Array<keyof ProxyEnabled>) {
+      if (key in pe) sanitisedPe[key] = Boolean(pe[key]);
+    }
+    if (Object.keys(sanitisedPe).length > 0) {
+      out.proxyEnabled = sanitisedPe as ProxyEnabled;
+    }
+  }
+
   return out;
 }
+
+export { PROXY_URL_RE };

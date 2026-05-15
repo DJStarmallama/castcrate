@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type RuntimeSettings } from "../lib/api";
+import { api, type ProxyProvider, type ProxyTestResult, type RuntimeSettings } from "../lib/api";
+import { redactProxyUrl } from "../lib/format";
 import { useEscape } from "../hooks/useEscape";
 import { useLocalState } from "../hooks/useLocalState";
 
@@ -27,11 +28,43 @@ export function Settings({ onClose }: Props) {
   const [bufferPercent, setBufferPercent] = useState<string>("");
   const [transcodeBufferPercent, setTranscodeBufferPercent] = useState<string>("");
   const [transcodeBitrate, setTranscodeBitrate] = useState<string>("");
+
+  // Proxy form state
+  const [proxyUrlInput, setProxyUrlInput] = useState<string>("");
+  const [proxyUrlEditing, setProxyUrlEditing] = useState<boolean>(false);
+  const [proxyUrlError, setProxyUrlError] = useState<string>("");
+  const [proxyEnabled, setProxyEnabled] = useState<{
+    yts: boolean;
+    eztv: boolean;
+    knaben: boolean;
+    torrentday: boolean;
+  }>({ yts: false, eztv: false, knaben: false, torrentday: false });
+  // Track the stored masked URL for display
+  const [storedProxyUrl, setStoredProxyUrl] = useState<string | null>(null);
+  // Test results per provider — reset when settings change
+  const [proxyTestResults, setProxyTestResults] = useState<
+    Partial<Record<ProxyProvider, ProxyTestResult | "loading">>
+  >({});
+
   useEffect(() => {
     if (!settings.data) return;
     setBufferPercent(String(settings.data.bufferPercent));
     setTranscodeBufferPercent(String(settings.data.transcodeBufferPercent));
     setTranscodeBitrate(settings.data.transcodeBitrate);
+    // Proxy
+    const url = settings.data.proxyUrl ?? null;
+    setStoredProxyUrl(url);
+    setProxyUrlInput("");
+    setProxyUrlEditing(false);
+    setProxyUrlError("");
+    setProxyEnabled({
+      yts: settings.data.proxyEnabled?.yts ?? false,
+      eztv: settings.data.proxyEnabled?.eztv ?? false,
+      knaben: settings.data.proxyEnabled?.knaben ?? false,
+      torrentday: settings.data.proxyEnabled?.torrentday ?? false,
+    });
+    // Reset test results when settings load/change
+    setProxyTestResults({});
   }, [settings.data]);
 
   const save = useMutation({
@@ -58,6 +91,54 @@ export function Settings({ onClose }: Props) {
     if (/^\d+(?:\.\d+)?[kKmM]?$/.test(transcodeBitrate))
       body.transcodeBitrate = transcodeBitrate;
     save.mutate(body);
+  };
+
+  const PROXY_URL_RE = /^(socks5h?|http|https):\/\/.+/;
+
+  const saveProxyUrl = () => {
+    const trimmed = proxyUrlInput.trim();
+    if (trimmed === "") {
+      // Clear the proxy URL
+      save.mutate({ proxyUrl: null });
+      setProxyUrlEditing(false);
+      setProxyTestResults({});
+      return;
+    }
+    if (!PROXY_URL_RE.test(trimmed)) {
+      setProxyUrlError("URL must start with socks5://, socks5h://, http://, or https://");
+      return;
+    }
+    setProxyUrlError("");
+    save.mutate({ proxyUrl: trimmed });
+    setProxyUrlEditing(false);
+    setProxyTestResults({});
+  };
+
+  const saveProxyEnabled = (provider: ProxyProvider, checked: boolean) => {
+    save.mutate({
+      proxyEnabled: { ...proxyEnabled, [provider]: checked },
+    });
+    setProxyEnabled((prev) => ({ ...prev, [provider]: checked }));
+    // Reset test result for the toggled provider
+    setProxyTestResults((prev) => {
+      const next = { ...prev };
+      delete next[provider];
+      return next;
+    });
+  };
+
+  const runProxyTest = async (provider: ProxyProvider) => {
+    setProxyTestResults((prev) => ({ ...prev, [provider]: "loading" }));
+    try {
+      const result = await api.testProxy(provider);
+      setProxyTestResults((prev) => ({ ...prev, [provider]: result }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "request failed";
+      setProxyTestResults((prev) => ({
+        ...prev,
+        [provider]: { ok: false, error: msg },
+      }));
+    }
   };
 
   const ffmpegAvailable = sys.data?.ffmpeg.available ?? false;
@@ -185,6 +266,114 @@ export function Settings({ onClose }: Props) {
             </div>
           </>
         )}
+
+        <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+          <p className="text-sm font-medium text-zinc-200">Network — Proxy (optional)</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Routes indexer searches only. Peer traffic is not proxied.
+          </p>
+
+          {/* Proxy URL */}
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-zinc-400 mb-1">Proxy URL</label>
+            {!proxyUrlEditing && storedProxyUrl ? (
+              <div className="flex items-center gap-2">
+                <code className="flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-400 truncate">
+                  {redactProxyUrl(storedProxyUrl)}
+                </code>
+                <button
+                  onClick={() => { setProxyUrlEditing(true); setProxyUrlInput(""); }}
+                  className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => { setProxyUrlInput(""); save.mutate({ proxyUrl: null }); setProxyTestResults({}); }}
+                  className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-red-400 hover:bg-zinc-800"
+                >
+                  Clear
+                </button>
+              </div>
+            ) : proxyUrlEditing || !storedProxyUrl ? (
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={proxyUrlInput}
+                    onChange={(e) => { setProxyUrlInput(e.target.value); setProxyUrlError(""); }}
+                    placeholder="socks5h://user:pass@host:1080"
+                    className="flex-1 rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
+                  />
+                  <button
+                    onClick={saveProxyUrl}
+                    disabled={save.isPending}
+                    className="rounded-md bg-emerald-500 px-3 py-1 text-xs font-medium text-black hover:bg-emerald-400 disabled:opacity-40"
+                  >
+                    {save.isPending ? "Saving…" : proxyUrlInput.trim() === "" ? "Clear" : "Save"}
+                  </button>
+                  {proxyUrlEditing && (
+                    <button
+                      onClick={() => { setProxyUrlEditing(false); setProxyUrlInput(""); setProxyUrlError(""); }}
+                      className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-400 hover:bg-zinc-800"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+                {proxyUrlError && (
+                  <p className="text-xs text-red-400">{proxyUrlError}</p>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Provider toggles + Test buttons */}
+          <div className="mt-4 space-y-2">
+            {(
+              [
+                { key: "yts", label: "YTS" },
+                { key: "eztv", label: "EZTV" },
+                { key: "knaben", label: "Knaben" },
+                { key: "torrentday", label: "TorrentDay" },
+              ] as { key: ProxyProvider; label: string }[]
+            ).map(({ key, label }) => {
+              const testResult = proxyTestResults[key];
+              return (
+                <div key={key} className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id={`proxy-${key}`}
+                    checked={proxyEnabled[key]}
+                    onChange={(e) => saveProxyEnabled(key, e.target.checked)}
+                    className="h-4 w-4 rounded border-zinc-600 accent-emerald-500"
+                  />
+                  <label
+                    htmlFor={`proxy-${key}`}
+                    className="w-24 text-xs text-zinc-300 cursor-pointer"
+                  >
+                    {label}
+                  </label>
+                  <button
+                    onClick={() => void runProxyTest(key)}
+                    disabled={testResult === "loading"}
+                    className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800 disabled:opacity-40"
+                  >
+                    {testResult === "loading" ? "Testing…" : "Test"}
+                  </button>
+                  {testResult && testResult !== "loading" && (
+                    <span
+                      className={`text-xs ${testResult.ok ? "text-emerald-400" : "text-red-400"}`}
+                    >
+                      {testResult.ok
+                        ? `OK ${testResult.egressIp ?? ""}${testResult.elapsedMs != null ? ` · ${testResult.elapsedMs}ms` : ""}`
+                        : `Failed: ${testResult.error ?? "unknown error"}`}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         <div className="mt-8 border-t border-zinc-800 pt-6 text-xs text-zinc-500">
           <p className="font-medium text-zinc-400">Network notes</p>

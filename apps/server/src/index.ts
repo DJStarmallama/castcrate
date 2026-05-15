@@ -17,6 +17,7 @@ const { historyRoutes } = await import("./routes/history.js");
 const { subtitleRoutes } = await import("./routes/subtitles.js");
 const { trailerRoutes } = await import("./routes/trailers.js");
 const { discoverRoutes } = await import("./routes/discover.js");
+const { proxyRoutes } = await import("./routes/proxy.js");
 const { shutdown } = await import("./services/torrent.js");
 const { startDiscovery, stopDiscovery } = await import("./services/discovery.js");
 const { shutdownCast } = await import("./services/cast.js");
@@ -42,6 +43,7 @@ await app.register(historyRoutes);
 await app.register(subtitleRoutes);
 await app.register(trailerRoutes);
 await app.register(discoverRoutes);
+await app.register(proxyRoutes);
 
 startBroadcasters();
 

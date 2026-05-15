@@ -1,11 +1,13 @@
 import { LRUCache } from "lru-cache";
 import type { TorrentResult } from "@castcrate/shared";
+import type { Dispatcher, RequestInit as UndiciRequestInit } from "undici";
 import {
   formatBytes,
   isCastFriendly,
   parseQuality,
   rankTorrent,
 } from "../lib/quality.js";
+import { getDispatcher } from "../lib/proxy.js";
 
 const KNABEN_API = process.env.KNABEN_BASE_URL ?? "https://api.knaben.org/v1";
 
@@ -54,14 +56,15 @@ function magnetFor(hit: KnabenHit): string | null {
   return null;
 }
 
-async function postKnaben(body: object): Promise<KnabenResponse> {
+async function postKnaben(body: object, dispatcher?: Dispatcher): Promise<KnabenResponse> {
   let res: Response;
   try {
     res = await fetch(KNABEN_API, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(body),
-    });
+      dispatcher,
+    } as UndiciRequestInit as unknown as RequestInit);
   } catch (err) {
     const cause = (err as Error & { cause?: { code?: string } })?.cause;
     if (cause?.code === "ENOTFOUND" || cause?.code === "EAI_AGAIN") {
@@ -145,7 +148,8 @@ export async function searchKnabenEpisode(
   season: number,
   episode: number,
 ): Promise<TorrentResult[]> {
-  const key = `ep::${seriesTitle.toLowerCase()}::${season}::${episode}`;
+  const dispatcher = getDispatcher("knaben");
+  const key = `ep::${seriesTitle.toLowerCase()}::${season}::${episode}::proxy:${dispatcher ? "on" : "off"}`;
   const cached = cache.get(key);
   if (cached) return cached;
 
@@ -158,7 +162,7 @@ export async function searchKnabenEpisode(
     hide_xxx: true,
     order_by: "seeders",
     order_direction: "desc",
-  });
+  }, dispatcher);
 
   const results: TorrentResult[] = [];
   for (const hit of data.hits ?? []) {
@@ -180,7 +184,8 @@ export async function searchKnabenSeasonPack(
   seriesTitle: string,
   season: number,
 ): Promise<TorrentResult[]> {
-  const key = `pack::${seriesTitle.toLowerCase()}::${season}`;
+  const dispatcher = getDispatcher("knaben");
+  const key = `pack::${seriesTitle.toLowerCase()}::${season}::proxy:${dispatcher ? "on" : "off"}`;
   const cached = cache.get(key);
   if (cached) return cached;
 
@@ -193,7 +198,7 @@ export async function searchKnabenSeasonPack(
     hide_xxx: true,
     order_by: "seeders",
     order_direction: "desc",
-  });
+  }, dispatcher);
 
   const results: TorrentResult[] = [];
   for (const hit of data.hits ?? []) {
@@ -213,7 +218,8 @@ export async function searchKnabenMovie(
   title: string,
   year?: number,
 ): Promise<TorrentResult[]> {
-  const key = `mov::${title.toLowerCase()}::${year ?? ""}`;
+  const dispatcher = getDispatcher("knaben");
+  const key = `mov::${title.toLowerCase()}::${year ?? ""}::proxy:${dispatcher ? "on" : "off"}`;
   const cached = cache.get(key);
   if (cached) return cached;
 
@@ -226,7 +232,7 @@ export async function searchKnabenMovie(
     hide_xxx: true,
     order_by: "seeders",
     order_direction: "desc",
-  });
+  }, dispatcher);
 
   const results: TorrentResult[] = [];
   for (const hit of data.hits ?? []) {

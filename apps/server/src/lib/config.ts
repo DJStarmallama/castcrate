@@ -17,4 +17,7 @@ export const config = {
   transcodeBitrate: process.env.TRANSCODE_BITRATE ?? "5M",
   ffmpegPath: process.env.FFMPEG_PATH ?? "ffmpeg",
   ytsBaseUrl: process.env.YTS_BASE_URL ?? "https://movies-api.accel.li/api/v2",
+  /** Optional SOCKS5/HTTP proxy URL loaded from env. Used as the default value
+   *  for `proxyUrl` in runtime settings when no persisted value exists. */
+  proxyUrl: process.env.PROXY_URL ?? null,
 };

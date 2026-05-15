@@ -83,10 +83,28 @@ export interface SystemCheck {
   };
 }
 
+export interface ProxyEnabled {
+  yts: boolean;
+  eztv: boolean;
+  knaben: boolean;
+  torrentday: boolean;
+}
+
 export interface RuntimeSettings {
   bufferPercent: number;
   transcodeBufferPercent: number;
   transcodeBitrate: string;
+  proxyUrl: string | null;
+  proxyEnabled: ProxyEnabled;
+}
+
+export type ProxyProvider = "yts" | "eztv" | "knaben" | "torrentday";
+
+export interface ProxyTestResult {
+  ok: boolean;
+  egressIp?: string;
+  error?: string;
+  elapsedMs?: number;
 }
 
 export interface DiscoverTitle {
@@ -248,6 +266,11 @@ export const api = {
     request<{ genres: DiscoverGenre[] }>("/api/discover/genres"),
   discoverProviders: () =>
     request<{ providers: DiscoverProvider[] }>("/api/discover/providers"),
+  testProxy: (provider: ProxyProvider) => {
+    const url = new URL("/api/proxy/test", window.location.origin);
+    url.searchParams.set("provider", provider);
+    return request<ProxyTestResult>(url.pathname + url.search);
+  },
   discoverEnrichment: (imdbId: string, title: string) => {
     const url = new URL("/api/discover/enrichment", window.location.origin);
     url.searchParams.set("imdbId", imdbId);

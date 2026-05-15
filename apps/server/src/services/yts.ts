@@ -1,6 +1,8 @@
 import { LRUCache } from "lru-cache";
 import type { TorrentResult } from "@castcrate/shared";
+import type { RequestInit as UndiciRequestInit } from "undici";
 import { config } from "../lib/config.js";
+import { getDispatcher } from "../lib/proxy.js";
 
 const TRACKERS = [
   "udp://open.demonii.com:1337/announce",
@@ -96,7 +98,8 @@ export function rankAndFilter(movies: YtsMovie[]): TorrentResult[] {
 }
 
 export async function searchTorrents(title: string, year?: number): Promise<TorrentResult[]> {
-  const key = `${title.toLowerCase()}::${year ?? ""}`;
+  const dispatcher = getDispatcher("yts");
+  const key = `${title.toLowerCase()}::${year ?? ""}::proxy:${dispatcher ? "on" : "off"}`;
   const cached = cache.get(key);
   if (cached) return cached;
 
@@ -106,7 +109,7 @@ export async function searchTorrents(title: string, year?: number): Promise<Torr
 
   let res: Response;
   try {
-    res = await fetch(url, { headers: { Accept: "application/json" } });
+    res = await fetch(url, { headers: { Accept: "application/json" }, dispatcher } as UndiciRequestInit as unknown as RequestInit);
   } catch (err) {
     const cause = (err as Error & { cause?: { code?: string } })?.cause;
     if (cause?.code === "ENOTFOUND" || cause?.code === "EAI_AGAIN") {
