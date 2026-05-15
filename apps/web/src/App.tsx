@@ -18,6 +18,7 @@ import { Library } from "./components/Library";
 import { Settings } from "./components/Settings";
 import { Theatre } from "./components/Theatre";
 import { Discover } from "./components/Discover";
+import { StreamWarning } from "./components/StreamWarning";
 import { useDebounced } from "./hooks/useDebounced";
 import { useGlobalShortcut } from "./hooks/useGlobalShortcut";
 import { useWsBridge } from "./hooks/useWsBridge";
@@ -46,6 +47,7 @@ export default function App() {
   const [startError, setStartError] = useState<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showTdWarning, setShowTdWarning] = useState(false);
   const [typeFilter, setTypeFilter] = useState<"all" | "movie" | "series">("all");
   const searchRef = useRef<HTMLInputElement>(null);
   const debounced = useDebounced(query, 300);
@@ -68,6 +70,8 @@ export default function App() {
     enabled: debounced.trim().length >= 3,
   });
 
+  const TD_WARNING_KEY = "castcrate.tdRatioWarning.dismissed";
+
   const start = useMutation({
     mutationFn: (params: {
       torrent: TorrentResult;
@@ -76,7 +80,9 @@ export default function App() {
       imdbId: string;
     }) =>
       api.startTorrent({
-        magnet: params.torrent.magnet,
+        magnet: params.torrent.source === "torrentday" ? undefined : params.torrent.magnet,
+        torrentUrl: params.torrent.torrentUrl,
+        source: params.torrent.source,
         title: params.title,
         posterUrl: params.posterUrl,
         imdbId: params.imdbId,
@@ -87,6 +93,12 @@ export default function App() {
       setSession(data);
       setSessionTitle({ title: params.title, poster: params.posterUrl });
       setStartError(null);
+      if (
+        params.torrent.source === "torrentday" &&
+        localStorage.getItem(TD_WARNING_KEY) !== "1"
+      ) {
+        setShowTdWarning(true);
+      }
     },
     onError: (err: Error) => setStartError(err.message),
   });
@@ -299,6 +311,14 @@ export default function App() {
 
       {showLibrary && <Library onClose={() => setShowLibrary(false)} />}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      {showTdWarning && (
+        <StreamWarning
+          onDismiss={() => {
+            localStorage.setItem("castcrate.tdRatioWarning.dismissed", "1");
+            setShowTdWarning(false);
+          }}
+        />
+      )}
       </main>
     </>
   );

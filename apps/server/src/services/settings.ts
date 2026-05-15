@@ -15,6 +15,12 @@ export interface ProxyEnabled {
   torrentday: boolean;
 }
 
+export interface TorrentDaySettings {
+  enabled: boolean;
+  uid: string | null;
+  pass: string | null;
+}
+
 export interface RuntimeSettings {
   bufferPercent: number;
   transcodeBufferPercent: number;
@@ -24,6 +30,8 @@ export interface RuntimeSettings {
   proxyUrl: string | null;
   /** Per-provider opt-in. Defaults: all false. */
   proxyEnabled: ProxyEnabled;
+  /** TorrentDay private tracker credentials + toggle. */
+  torrentDay: TorrentDaySettings;
 }
 
 const ALLOWED_KEYS: ReadonlyArray<keyof RuntimeSettings> = [
@@ -32,6 +40,7 @@ const ALLOWED_KEYS: ReadonlyArray<keyof RuntimeSettings> = [
   "transcodeBitrate",
   "proxyUrl",
   "proxyEnabled",
+  "torrentDay",
 ];
 
 const PROXY_URL_RE = /^(socks5h?|http|https):\/\/.+/;
@@ -41,6 +50,12 @@ const PROXY_ENABLED_DEFAULTS: ProxyEnabled = {
   eztv: false,
   knaben: false,
   torrentday: false,
+};
+
+const TORRENT_DAY_DEFAULTS: TorrentDaySettings = {
+  enabled: false,
+  uid: null,
+  pass: null,
 };
 
 let overrides: Partial<RuntimeSettings> = {};
@@ -95,6 +110,9 @@ export function getSettings(): RuntimeSettings {
     proxyEnabled: overrides.proxyEnabled
       ? { ...PROXY_ENABLED_DEFAULTS, ...overrides.proxyEnabled }
       : { ...PROXY_ENABLED_DEFAULTS },
+    torrentDay: overrides.torrentDay
+      ? { ...TORRENT_DAY_DEFAULTS, ...overrides.torrentDay }
+      : { ...TORRENT_DAY_DEFAULTS },
   };
 }
 
@@ -125,9 +143,23 @@ export async function updateSettings(
           ...sanitised.proxyEnabled,
         };
       }
+    } else if (k === "torrentDay") {
+      if ("torrentDay" in partial) {
+        if (partial.torrentDay === null) {
+          // Explicit null resets to defaults — remove from overrides.
+          delete next.torrentDay;
+        } else if (sanitised.torrentDay !== undefined) {
+          // Partial merge inside the block.
+          next.torrentDay = {
+            ...TORRENT_DAY_DEFAULTS,
+            ...overrides.torrentDay,
+            ...sanitised.torrentDay,
+          };
+        }
+      }
     } else {
       // Regular scalar keys
-      const key = k as Exclude<keyof RuntimeSettings, "proxyUrl" | "proxyEnabled">;
+      const key = k as Exclude<keyof RuntimeSettings, "proxyUrl" | "proxyEnabled" | "torrentDay">;
       if (partial[key] === null || partial[key] === undefined) {
         delete next[key];
       } else if (sanitised[key] !== undefined) {
@@ -189,6 +221,36 @@ function sanitise(input: Partial<RuntimeSettings>): Partial<RuntimeSettings> {
     }
     if (Object.keys(sanitisedPe).length > 0) {
       out.proxyEnabled = sanitisedPe as ProxyEnabled;
+    }
+  }
+
+  // torrentDay: partial object — validate each field individually.
+  if (input.torrentDay !== null && typeof input.torrentDay === "object") {
+    const td = input.torrentDay as unknown as Record<string, unknown>;
+    const sanitisedTd: Partial<TorrentDaySettings> = {};
+    if ("enabled" in td) {
+      sanitisedTd.enabled = Boolean(td.enabled);
+    }
+    if ("uid" in td) {
+      if (td.uid === null || td.uid === "" || td.uid === undefined) {
+        sanitisedTd.uid = null;
+      } else if (typeof td.uid === "string" && /^\d+$/.test(td.uid.trim())) {
+        sanitisedTd.uid = td.uid.trim();
+      }
+      // invalid uid → silently dropped
+    }
+    if ("pass" in td) {
+      if (td.pass === null || td.pass === "" || td.pass === undefined) {
+        sanitisedTd.pass = null;
+      } else if (typeof td.pass === "string" && /^[A-Za-z0-9]+$/.test(td.pass.trim())) {
+        sanitisedTd.pass = td.pass.trim();
+      }
+      // invalid pass → silently dropped
+    }
+    if (Object.keys(sanitisedTd).length > 0) {
+      // Only store the validated keys — the update loop handles merging with
+      // defaults and existing overrides so we don't stomp un-specified fields.
+      out.torrentDay = sanitisedTd as TorrentDaySettings;
     }
   }
 

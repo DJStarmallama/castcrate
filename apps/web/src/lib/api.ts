@@ -90,13 +90,32 @@ export interface ProxyEnabled {
   torrentday: boolean;
 }
 
+export interface TorrentDaySettings {
+  enabled: boolean;
+  uid: string | null;
+  pass: string | null;
+}
+
 export interface RuntimeSettings {
   bufferPercent: number;
   transcodeBufferPercent: number;
   transcodeBitrate: string;
   proxyUrl: string | null;
   proxyEnabled: ProxyEnabled;
+  torrentDay: TorrentDaySettings;
 }
+
+export interface TorrentDayTestResult {
+  ok: boolean;
+  sample?: string[];
+  error?: string;
+}
+
+/** Partial patch payload for PATCH /api/settings.
+ *  torrentDay is allowed to be a partial merge (server merges fields). */
+export type SettingsPatch = Omit<Partial<RuntimeSettings>, "torrentDay"> & {
+  torrentDay?: Partial<TorrentDaySettings> | null;
+};
 
 export type ProxyProvider = "yts" | "eztv" | "knaben" | "torrentday";
 
@@ -169,7 +188,9 @@ export const api = {
     }>(url.pathname + url.search);
   },
   startTorrent: (params: {
-    magnet: string;
+    magnet?: string;
+    torrentUrl?: string;
+    source?: string;
     title?: string;
     posterUrl?: string | null;
     imdbId?: string | null;
@@ -186,7 +207,7 @@ export const api = {
   clearHistory: () => request<void>("/api/history", { method: "DELETE" }),
   systemCheck: () => request<SystemCheck>("/api/system/check"),
   getSettings: () => request<RuntimeSettings>("/api/settings"),
-  updateSettings: (body: Partial<RuntimeSettings>) =>
+  updateSettings: (body: SettingsPatch) =>
     request<RuntimeSettings>("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -271,6 +292,8 @@ export const api = {
     url.searchParams.set("provider", provider);
     return request<ProxyTestResult>(url.pathname + url.search);
   },
+  testTorrentDay: () =>
+    request<TorrentDayTestResult>("/api/torrentday/test"),
   discoverEnrichment: (imdbId: string, title: string) => {
     const url = new URL("/api/discover/enrichment", window.location.origin);
     url.searchParams.set("imdbId", imdbId);

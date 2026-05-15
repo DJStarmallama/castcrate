@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type ProxyProvider, type ProxyTestResult, type RuntimeSettings } from "../lib/api";
+import { api, type ProxyProvider, type ProxyTestResult, type SettingsPatch, type TorrentDayTestResult } from "../lib/api";
 import { redactProxyUrl } from "../lib/format";
 import { useEscape } from "../hooks/useEscape";
 import { useLocalState } from "../hooks/useLocalState";
@@ -46,6 +46,22 @@ export function Settings({ onClose }: Props) {
     Partial<Record<ProxyProvider, ProxyTestResult | "loading">>
   >({});
 
+  // TorrentDay state
+  const [tdEnabled, setTdEnabled] = useState(false);
+  // "stored" = server has a value (masked as "***"); null = not set
+  const [tdUidStored, setTdUidStored] = useState<string | null>(null);
+  const [tdPassStored, setTdPassStored] = useState<string | null>(null);
+  const [tdUidInput, setTdUidInput] = useState("");
+  const [tdPassInput, setTdPassInput] = useState("");
+  const [tdUidEditing, setTdUidEditing] = useState(false);
+  const [tdPassEditing, setTdPassEditing] = useState(false);
+  const [tdUidError, setTdUidError] = useState("");
+  const [tdPassError, setTdPassError] = useState("");
+  const [tdTestResult, setTdTestResult] = useState<TorrentDayTestResult | "loading" | null>(null);
+  const [tdHelpOpen, setTdHelpOpen] = useState(false);
+  // Ref to track whether settings have changed so we can reset test result
+  const tdSettingsVersion = useRef(0);
+
   useEffect(() => {
     if (!settings.data) return;
     setBufferPercent(String(settings.data.bufferPercent));
@@ -65,10 +81,23 @@ export function Settings({ onClose }: Props) {
     });
     // Reset test results when settings load/change
     setProxyTestResults({});
+    // TorrentDay
+    const td = settings.data.torrentDay;
+    setTdEnabled(td?.enabled ?? false);
+    setTdUidStored(td?.uid ?? null);
+    setTdPassStored(td?.pass ?? null);
+    setTdUidInput("");
+    setTdPassInput("");
+    setTdUidEditing(false);
+    setTdPassEditing(false);
+    setTdUidError("");
+    setTdPassError("");
+    tdSettingsVersion.current += 1;
+    setTdTestResult(null);
   }, [settings.data]);
 
   const save = useMutation({
-    mutationFn: (body: Partial<RuntimeSettings>) => api.updateSettings(body),
+    mutationFn: (body: SettingsPatch) => api.updateSettings(body),
     onSuccess: (data) => {
       qc.setQueryData(["runtime-settings"], data);
       qc.invalidateQueries({ queryKey: ["system-check"] });
@@ -82,7 +111,7 @@ export function Settings({ onClose }: Props) {
       transcodeBitrate !== settings.data.transcodeBitrate);
 
   const onSave = () => {
-    const body: Partial<RuntimeSettings> = {};
+    const body: SettingsPatch = {};
     const bp = Number(bufferPercent);
     const tbp = Number(transcodeBufferPercent);
     if (Number.isFinite(bp) && bp >= 0 && bp <= 100) body.bufferPercent = bp;
@@ -140,6 +169,80 @@ export function Settings({ onClose }: Props) {
       }));
     }
   };
+
+  const UID_RE = /^\d+$/;
+  const PASS_RE = /^[A-Za-z0-9]+$/;
+
+  const saveTdUid = () => {
+    const trimmed = tdUidInput.trim();
+    if (trimmed === "") {
+      save.mutate({ torrentDay: { uid: null } });
+      setTdUidEditing(false);
+      setTdTestResult(null);
+      return;
+    }
+    if (!UID_RE.test(trimmed)) {
+      setTdUidError("uid must be digits only");
+      return;
+    }
+    setTdUidError("");
+    save.mutate({ torrentDay: { uid: trimmed } });
+    setTdUidEditing(false);
+    setTdTestResult(null);
+  };
+
+  const saveTdPass = () => {
+    const trimmed = tdPassInput.trim();
+    if (trimmed === "") {
+      save.mutate({ torrentDay: { pass: null } });
+      setTdPassEditing(false);
+      setTdTestResult(null);
+      return;
+    }
+    if (!PASS_RE.test(trimmed) || trimmed.length < 16) {
+      setTdPassError("pass looks too short / has invalid characters");
+      return;
+    }
+    setTdPassError("");
+    save.mutate({ torrentDay: { pass: trimmed } });
+    setTdPassEditing(false);
+    setTdTestResult(null);
+  };
+
+  const saveTdEnabled = (checked: boolean) => {
+    save.mutate({ torrentDay: { enabled: checked } });
+    setTdEnabled(checked);
+    setTdTestResult(null);
+  };
+
+  const clearTdUid = () => {
+    save.mutate({ torrentDay: { uid: null } });
+    setTdTestResult(null);
+  };
+
+  const clearTdPass = () => {
+    save.mutate({ torrentDay: { pass: null } });
+    setTdTestResult(null);
+  };
+
+  const runTdTest = async () => {
+    setTdTestResult("loading");
+    const version = tdSettingsVersion.current;
+    try {
+      const result = await api.testTorrentDay();
+      if (tdSettingsVersion.current === version) {
+        setTdTestResult(result);
+      }
+    } catch (err) {
+      if (tdSettingsVersion.current === version) {
+        const msg = err instanceof Error ? err.message : "request failed";
+        setTdTestResult({ ok: false, error: msg });
+      }
+    }
+  };
+
+  // Both uid and pass are stored on the server when they read back as "***"
+  const tdCredentialsStored = tdUidStored === "***" && tdPassStored === "***";
 
   const ffmpegAvailable = sys.data?.ffmpeg.available ?? false;
 
@@ -372,6 +475,212 @@ export function Settings({ onClose }: Props) {
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* Indexers section */}
+        <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+          <p className="text-sm font-medium text-zinc-200">
+            Indexers — Private Trackers (optional)
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Add credentials for private trackers used as a last-resort fallback when public
+            indexers come up empty. Cratebuddy is unofficial — your account standing is your
+            responsibility.
+          </p>
+
+          {/* TorrentDay subsection */}
+          <div className="mt-4 space-y-4">
+            {/* Enable toggle */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => saveTdEnabled(!tdEnabled)}
+                disabled={!tdCredentialsStored && !tdEnabled}
+                role="switch"
+                aria-checked={tdEnabled}
+                className={`h-6 w-11 flex-shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                  tdEnabled ? "bg-emerald-500" : "bg-zinc-700"
+                }`}
+                title={
+                  !tdCredentialsStored && !tdEnabled
+                    ? "Save uid and pass first"
+                    : undefined
+                }
+              >
+                <span
+                  className={`block h-5 w-5 rounded-full bg-white transition ${
+                    tdEnabled ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+              <div>
+                <p className="text-xs font-medium text-zinc-300">Enable TorrentDay</p>
+                {!tdCredentialsStored && !tdEnabled && (
+                  <p className="text-xs text-zinc-600">Save uid and pass first to enable</p>
+                )}
+              </div>
+            </div>
+
+            {/* uid input */}
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">
+                uid cookie
+              </label>
+              {!tdUidEditing && tdUidStored ? (
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-400 truncate">
+                    ••••••••
+                  </code>
+                  <button
+                    onClick={() => { setTdUidEditing(true); setTdUidInput(""); }}
+                    className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={clearTdUid}
+                    className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-red-400 hover:bg-zinc-800"
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={tdUidInput}
+                      onChange={(e) => { setTdUidInput(e.target.value); setTdUidError(""); }}
+                      placeholder="2462145"
+                      className="flex-1 rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
+                    />
+                    <button
+                      onClick={saveTdUid}
+                      disabled={save.isPending}
+                      className="rounded-md bg-emerald-500 px-3 py-1 text-xs font-medium text-black hover:bg-emerald-400 disabled:opacity-40"
+                    >
+                      {save.isPending ? "Saving…" : tdUidInput.trim() === "" ? "Clear" : "Save"}
+                    </button>
+                    {tdUidEditing && (
+                      <button
+                        onClick={() => { setTdUidEditing(false); setTdUidInput(""); setTdUidError(""); }}
+                        className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-400 hover:bg-zinc-800"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                  {tdUidError && <p className="text-xs text-red-400">{tdUidError}</p>}
+                </div>
+              )}
+            </div>
+
+            {/* pass input */}
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">
+                pass cookie
+              </label>
+              {!tdPassEditing && tdPassStored ? (
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-400 truncate">
+                    ••••••••
+                  </code>
+                  <button
+                    onClick={() => { setTdPassEditing(true); setTdPassInput(""); }}
+                    className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={clearTdPass}
+                    className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-red-400 hover:bg-zinc-800"
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="password"
+                      value={tdPassInput}
+                      onChange={(e) => { setTdPassInput(e.target.value); setTdPassError(""); }}
+                      placeholder="32-char token"
+                      className="flex-1 rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
+                    />
+                    <button
+                      onClick={saveTdPass}
+                      disabled={save.isPending}
+                      className="rounded-md bg-emerald-500 px-3 py-1 text-xs font-medium text-black hover:bg-emerald-400 disabled:opacity-40"
+                    >
+                      {save.isPending ? "Saving…" : tdPassInput.trim() === "" ? "Clear" : "Save"}
+                    </button>
+                    {tdPassEditing && (
+                      <button
+                        onClick={() => { setTdPassEditing(false); setTdPassInput(""); setTdPassError(""); }}
+                        className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-400 hover:bg-zinc-800"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                  {tdPassError && <p className="text-xs text-red-400">{tdPassError}</p>}
+                </div>
+              )}
+            </div>
+
+            {/* How to get these cookies — collapsible */}
+            <div>
+              <button
+                onClick={() => setTdHelpOpen((v) => !v)}
+                className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                <svg
+                  className={`h-3 w-3 transition-transform ${tdHelpOpen ? "rotate-90" : ""}`}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+                How to get these cookies
+              </button>
+              {tdHelpOpen && (
+                <ol className="mt-2 space-y-1 pl-4 text-xs text-zinc-500 list-decimal">
+                  <li>Log into torrentday.com.</li>
+                  <li>Open DevTools → Application → Cookies → torrentday.com.</li>
+                  <li>Copy the <code>uid</code> and <code>pass</code> values into the fields above.</li>
+                  <li>{"Don't share these — they're equivalent to your password."}</li>
+                </ol>
+              )}
+            </div>
+
+            {/* Test connection */}
+            <div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => void runTdTest()}
+                  disabled={!tdCredentialsStored || tdTestResult === "loading"}
+                  className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {tdTestResult === "loading" ? "Testing…" : "Test connection"}
+                </button>
+                {tdTestResult && tdTestResult !== "loading" && (
+                  <span
+                    className={`text-xs ${tdTestResult.ok ? "text-emerald-400" : "text-red-400"}`}
+                  >
+                    {tdTestResult.ok
+                      ? `✓ ${tdTestResult.sample?.length ?? 0} results — first: ${tdTestResult.sample?.[0] ?? ""}`
+                      : `✗ ${tdTestResult.error ?? "unknown error"}`}
+                  </span>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-zinc-600">
+                Streaming via a private tracker may affect your seed ratio. TorrentDay{"'"}s ToS may
+                not permit third-party clients.
+              </p>
+            </div>
           </div>
         </div>
 

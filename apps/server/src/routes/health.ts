@@ -34,10 +34,32 @@ export async function healthRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get("/api/settings", async () => getSettings());
+  app.get("/api/settings", async () => {
+    const s = getSettings();
+    // Mask sensitive TorrentDay credentials — server-internal only.
+    return {
+      ...s,
+      torrentDay: {
+        enabled: s.torrentDay.enabled,
+        uid: s.torrentDay.uid !== null ? "***" : null,
+        pass: s.torrentDay.pass !== null ? "***" : null,
+      },
+    };
+  });
 
   app.patch<{ Body: Partial<RuntimeSettings> }>(
     "/api/settings",
-    async (req) => updateSettings(req.body ?? {}),
+    async (req) => {
+      const updated = await updateSettings(req.body ?? {});
+      // Mask sensitive TorrentDay credentials in the response.
+      return {
+        ...updated,
+        torrentDay: {
+          enabled: updated.torrentDay.enabled,
+          uid: updated.torrentDay.uid !== null ? "***" : null,
+          pass: updated.torrentDay.pass !== null ? "***" : null,
+        },
+      };
+    },
   );
 }

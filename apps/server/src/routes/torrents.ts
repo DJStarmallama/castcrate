@@ -10,6 +10,13 @@ import {
   searchKnabenSeasonPack,
 } from "../services/knaben.js";
 import {
+  tdAvailable,
+  searchTorrentDayMovie,
+  searchTorrentDayEpisode,
+  fetchTorrentBlob,
+  TorrentDayAuthError,
+} from "../services/torrentday.js";
+import {
   startTorrent,
   getStatus,
   getVideoFile,
@@ -80,7 +87,7 @@ export async function torrentRoutes(app: FastifyInstance) {
       }
       const year = req.query.year ? Number(req.query.year) : undefined;
       const tried: string[] = [];
-      const errors: string[] = [];
+      const errors: Array<string | { source: string; code: string }> = [];
       let results: TorrentResult[] = [];
       try {
         tried.push("yts");
@@ -96,8 +103,20 @@ export async function torrentRoutes(app: FastifyInstance) {
           errors.push(`knaben: ${(err as Error).message}`);
         }
       }
+      if (results.length === 0 && tdAvailable()) {
+        tried.push("torrentday");
+        try {
+          results = await searchTorrentDayMovie(title, year);
+        } catch (err) {
+          if (err instanceof TorrentDayAuthError) {
+            errors.push({ source: "torrentday", code: "auth" });
+          } else {
+            errors.push({ source: "torrentday", code: "fetch" });
+          }
+        }
+      }
       if (results.length === 0 && errors.length > 0) {
-        return reply.code(502).send({ error: errors.join("; "), tried });
+        return reply.code(502).send({ error: "all sources failed", tried, errors });
       }
       return { results, tried };
     },
@@ -121,7 +140,7 @@ export async function torrentRoutes(app: FastifyInstance) {
       });
     }
     const tried: string[] = [];
-    const errors: string[] = [];
+    const errors: Array<string | { source: string; code: string }> = [];
     let episodeResults: TorrentResult[] = [];
     let packResults: TorrentResult[] = [];
 
@@ -153,12 +172,26 @@ export async function torrentRoutes(app: FastifyInstance) {
       }
     }
 
+    // TD fallback for episodes — only when title is available.
+    if (episodeResults.length === 0 && title && tdAvailable()) {
+      if (!tried.includes("torrentday")) tried.push("torrentday");
+      try {
+        episodeResults = await searchTorrentDayEpisode(title, season, episode);
+      } catch (err) {
+        if (err instanceof TorrentDayAuthError) {
+          errors.push({ source: "torrentday", code: "auth" });
+        } else {
+          errors.push({ source: "torrentday", code: "fetch" });
+        }
+      }
+    }
+
     if (
       episodeResults.length === 0 &&
       packResults.length === 0 &&
       errors.length > 0
     ) {
-      return reply.code(502).send({ error: errors.join("; "), tried });
+      return reply.code(502).send({ error: "all sources failed", tried, errors });
     }
 
     return {
@@ -171,6 +204,8 @@ export async function torrentRoutes(app: FastifyInstance) {
   app.post<{
     Body: {
       magnet?: string;
+      torrentUrl?: string;
+      source?: string;
       title?: string;
       posterUrl?: string | null;
       imdbId?: string | null;
@@ -178,7 +213,36 @@ export async function torrentRoutes(app: FastifyInstance) {
       videoCodec?: string | null;
     };
   }>("/api/torrent/start", async (req, reply) => {
-    const magnet = req.body?.magnet;
+    const { magnet, torrentUrl, source } = req.body ?? {};
+    // TorrentDay results carry a torrentUrl (blob path) instead of a magnet.
+    if (source === "torrentday") {
+      if (!torrentUrl) {
+        return reply.code(400).send({ error: "torrentUrl required for torrentday source" });
+      }
+      try {
+        const blob = await fetchTorrentBlob(torrentUrl);
+        const session = await startTorrent(blob);
+        const videoCodec = req.body?.videoCodec ?? null;
+        setMeta(session.infoHash, {
+          title: req.body?.title ?? session.name,
+          posterUrl: req.body?.posterUrl ?? null,
+          imdbId: req.body?.imdbId ?? null,
+          resolution: req.body?.resolution ?? null,
+          videoCodec,
+          startedAt: new Date().toISOString(),
+        });
+        return {
+          infoHash: session.infoHash,
+          videoName: session.videoName,
+          videoLength: session.videoLength,
+          streamUrl: `/stream/${session.infoHash}`,
+          videoCodec,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "failed to fetch or start torrent";
+        return reply.code(500).send({ error: msg });
+      }
+    }
     if (!magnet || !magnet.startsWith("magnet:")) {
       return reply.code(400).send({ error: "valid magnet link required" });
     }

@@ -72,6 +72,22 @@ Providers that expose a SOCKS5 endpoint suitable for this: **Mullvad**, **Proton
 
 > ⚠️ This proxies indexer HTTP only. **BitTorrent peer connections are not proxied** — they run direct from your IP. If you need anonymity at the peer layer, run a full VPN (see above) instead.
 
+### Private trackers — TorrentDay (optional)
+
+For deeper coverage of mid-popularity TV and obscure-format movies, you can plug in a TorrentDay account. TD is invite-only and runs as a last-resort fallback after YTS / EZTV / Knaben come up empty.
+
+Configure in **Settings → Indexers**:
+
+1. Tick **Enable TorrentDay**.
+2. Paste your `uid` and `pass` cookie values (DevTools → Application → Cookies → torrentday.com — both fields are bearer-equivalent, treat them like a password).
+3. Hit **Test connection** to confirm.
+
+If you're in a region that blocks TD (AUS, UK, others), also tick **TorrentDay** under **Settings → Network → Proxy** and configure a SOCKS5 endpoint above.
+
+> ⚠️ **Ratio responsibility.** TorrentDay tracks your upload-to-download ratio. Streaming may not contribute much upload — keep an eye on your ratio if you stream often.
+>
+> ⚠️ **Unofficial client.** TD's terms may not permit third-party clients. Cratebuddy stores credentials only in `~/.castcrate/settings.json` (no env vars, no telemetry, no transmission anywhere except to TD itself). Account standing is your responsibility.
+
 ## Scripts
 
 | Command | What |

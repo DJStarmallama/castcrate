@@ -40,13 +40,16 @@ export interface TorrentResult {
   peers: number;
   resolution: "480p" | "720p" | "1080p" | "2160p" | "unknown";
   videoCodec: string;
-  source: "yts" | "eztv" | "knaben";
+  source: "yts" | "eztv" | "knaben" | "torrentday";
   // For TV: which episode (or season pack with episode=0)
   season?: number;
   episode?: number;
   // Whether this codec/quality is expected to play on a default Chromecast.
   // false → user gets a "may not play on older Chromecasts" hint.
   castFriendly: boolean;
+  /** Absolute URL to the .torrent file — set for sources that use blob downloads
+   *  instead of magnets (e.g. private trackers like TorrentDay). */
+  torrentUrl?: string;
 }
 
 export interface CastDevice {

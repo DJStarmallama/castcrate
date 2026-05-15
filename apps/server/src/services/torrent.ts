@@ -31,7 +31,7 @@ interface WtTorrent {
 
 interface WtClient {
   add(
-    torrentId: string,
+    torrentId: string | Buffer,
     opts: { path: string; sequentialDownload?: boolean },
     cb: (torrent: WtTorrent) => void,
   ): WtTorrent;
@@ -110,20 +110,23 @@ export function setMetaSelectedFile(infoHash: string, index: number): void {
   if (m) m.selectedFileIndex = index;
 }
 
-export async function startTorrent(magnet: string): Promise<TorrentSession> {
+export async function startTorrent(input: string | Buffer): Promise<TorrentSession> {
   const client = await getClient();
 
-  // Best-effort fast path if already added
-  for (const t of client.torrents) {
-    if (magnet.includes(t.infoHash)) {
-      const f = pickVideoFile(t.files);
-      if (f) {
-        return {
-          infoHash: t.infoHash,
-          name: t.name,
-          videoName: f.name,
-          videoLength: f.length,
-        };
+  // Best-effort fast path for magnet strings — skip for Buffer inputs and let
+  // webtorrent's own duplicate handling take care of deduplication.
+  if (typeof input === "string") {
+    for (const t of client.torrents) {
+      if (input.includes(t.infoHash)) {
+        const f = pickVideoFile(t.files);
+        if (f) {
+          return {
+            infoHash: t.infoHash,
+            name: t.name,
+            videoName: f.name,
+            videoLength: f.length,
+          };
+        }
       }
     }
   }
@@ -135,7 +138,7 @@ export async function startTorrent(magnet: string): Promise<TorrentSession> {
     );
     // sequentialDownload: stream the head of the file before the tail —
     // required for in-progress playback and byte-range requests to work.
-    client.add(magnet, { path: config.downloadPath, sequentialDownload: true }, (torrent) => {
+    client.add(input, { path: config.downloadPath, sequentialDownload: true }, (torrent) => {
       const finalize = () => {
         const file = pickVideoFile(torrent.files);
         if (!file) {

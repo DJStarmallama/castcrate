@@ -18,6 +18,7 @@ const { subtitleRoutes } = await import("./routes/subtitles.js");
 const { trailerRoutes } = await import("./routes/trailers.js");
 const { discoverRoutes } = await import("./routes/discover.js");
 const { proxyRoutes } = await import("./routes/proxy.js");
+const { torrentdayRoutes } = await import("./routes/torrentday.js");
 const { shutdown } = await import("./services/torrent.js");
 const { startDiscovery, stopDiscovery } = await import("./services/discovery.js");
 const { shutdownCast } = await import("./services/cast.js");
@@ -44,6 +45,7 @@ await app.register(subtitleRoutes);
 await app.register(trailerRoutes);
 await app.register(discoverRoutes);
 await app.register(proxyRoutes);
+await app.register(torrentdayRoutes);
 
 startBroadcasters();
 
