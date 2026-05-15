@@ -1,0 +1,27 @@
+{
+  "streams": [
+    {
+      "name": "Torrentio 1080p",
+      "title": "Inception.2010.1080p.BluRay.x264-YIFY\n👤 142 💾 2.18 GB ⚙️ YTS",
+      "infoHash": "a94f3c2d1e8b4f7a9c0d2e5f8b1a3c6d9e2f4a7b",
+      "fileIdx": 0,
+      "sources": [
+        "tracker:udp://tracker.opentrackr.org:1337/announce",
+        "tracker:udp://open.demonii.com:1337/announce",
+        "dht:a94f3c2d1e8b4f7a9c0d2e5f8b1a3c6d9e2f4a7b"
+      ]
+    },
+    {
+      "name": "Torrentio RD",
+      "title": "Inception 2010 4K HDR",
+      "url": "https://download.real-debrid.com/d/abc123xyz/inception.mkv",
+      "behaviorHints": {
+        "videoSize": 12345678901
+      }
+    },
+    {
+      "name": "NoHashNoUrl Addon",
+      "title": "Inception 2010 720p"
+    }
+  ]
+}

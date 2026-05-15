@@ -1,0 +1,8 @@
+{
+  "id": "community.torrentio",
+  "version": "0.0.16",
+  "name": "Torrentio",
+  "resources": ["stream", "catalog"],
+  "types": ["movie", "series"],
+  "catalogs": []
+}

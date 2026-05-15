@@ -13,6 +13,14 @@ export interface ProxyEnabled {
   eztv: boolean;
   knaben: boolean;
   torrentday: boolean;
+  stremio: boolean;
+}
+
+export interface StremioAddon {
+  id: string;
+  url: string;
+  name: string;
+  enabled: boolean;
 }
 
 export interface TorrentDaySettings {
@@ -32,6 +40,8 @@ export interface RuntimeSettings {
   proxyEnabled: ProxyEnabled;
   /** TorrentDay private tracker credentials + toggle. */
   torrentDay: TorrentDaySettings;
+  /** Stremio addon manifest URLs + metadata. */
+  stremioAddons: StremioAddon[];
 }
 
 const ALLOWED_KEYS: ReadonlyArray<keyof RuntimeSettings> = [
@@ -41,6 +51,7 @@ const ALLOWED_KEYS: ReadonlyArray<keyof RuntimeSettings> = [
   "proxyUrl",
   "proxyEnabled",
   "torrentDay",
+  "stremioAddons",
 ];
 
 const PROXY_URL_RE = /^(socks5h?|http|https):\/\/.+/;
@@ -50,6 +61,7 @@ const PROXY_ENABLED_DEFAULTS: ProxyEnabled = {
   eztv: false,
   knaben: false,
   torrentday: false,
+  stremio: false,
 };
 
 const TORRENT_DAY_DEFAULTS: TorrentDaySettings = {
@@ -113,6 +125,7 @@ export function getSettings(): RuntimeSettings {
     torrentDay: overrides.torrentDay
       ? { ...TORRENT_DAY_DEFAULTS, ...overrides.torrentDay }
       : { ...TORRENT_DAY_DEFAULTS },
+    stremioAddons: overrides.stremioAddons ?? [],
   };
 }
 
@@ -157,9 +170,18 @@ export async function updateSettings(
           };
         }
       }
+    } else if (k === "stremioAddons") {
+      if ("stremioAddons" in partial) {
+        if (partial.stremioAddons === null || partial.stremioAddons === undefined) {
+          delete next.stremioAddons;
+        } else if (sanitised.stremioAddons !== undefined) {
+          // Whole-array replace semantics — no partial merge within the array.
+          next.stremioAddons = sanitised.stremioAddons;
+        }
+      }
     } else {
       // Regular scalar keys
-      const key = k as Exclude<keyof RuntimeSettings, "proxyUrl" | "proxyEnabled" | "torrentDay">;
+      const key = k as Exclude<keyof RuntimeSettings, "proxyUrl" | "proxyEnabled" | "torrentDay" | "stremioAddons">;
       if (partial[key] === null || partial[key] === undefined) {
         delete next[key];
       } else if (sanitised[key] !== undefined) {
@@ -222,6 +244,31 @@ function sanitise(input: Partial<RuntimeSettings>): Partial<RuntimeSettings> {
     if (Object.keys(sanitisedPe).length > 0) {
       out.proxyEnabled = sanitisedPe as ProxyEnabled;
     }
+  }
+
+  // stremioAddons: whole-array replace. Validate each entry.
+  if (Array.isArray(input.stremioAddons)) {
+    const ADDON_URL_RE = /^https?:\/\/.+/;
+    const sanitisedAddons: StremioAddon[] = [];
+    for (const item of input.stremioAddons) {
+      if (item === null || typeof item !== "object") continue;
+      const addon = item as unknown as Record<string, unknown>;
+      // url: required, must match http(s)://
+      const url = typeof addon.url === "string" ? addon.url.trim() : "";
+      if (!ADDON_URL_RE.test(url)) continue;
+      // id: must be a non-empty string — server-generated; client value kept as-is here
+      //     (Phase 6 endpoints will generate fresh ids; sanitiser just validates shape).
+      const id = typeof addon.id === "string" && addon.id.trim().length > 0
+        ? addon.id.trim()
+        : "";
+      if (!id) continue;
+      // name: cast to string, trim, truncate to 60 chars.
+      const name = String(addon.name ?? "").trim().slice(0, 60);
+      // enabled: boolean coerce.
+      const enabled = Boolean(addon.enabled);
+      sanitisedAddons.push({ id, url, name, enabled });
+    }
+    out.stremioAddons = sanitisedAddons;
   }
 
   // torrentDay: partial object — validate each field individually.

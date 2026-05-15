@@ -1,0 +1,8 @@
+{
+  "id": "community.catalogonly",
+  "version": "1.0.0",
+  "name": "CatalogOnly Addon",
+  "resources": ["catalog"],
+  "types": ["movie", "series"],
+  "catalogs": []
+}

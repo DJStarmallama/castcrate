@@ -40,7 +40,7 @@ export interface TorrentResult {
   peers: number;
   resolution: "480p" | "720p" | "1080p" | "2160p" | "unknown";
   videoCodec: string;
-  source: "yts" | "eztv" | "knaben" | "torrentday";
+  source: "yts" | "eztv" | "knaben" | "torrentday" | "stremio";
   // For TV: which episode (or season pack with episode=0)
   season?: number;
   episode?: number;
@@ -50,6 +50,12 @@ export interface TorrentResult {
   /** Absolute URL to the .torrent file — set for sources that use blob downloads
    *  instead of magnets (e.g. private trackers like TorrentDay). */
   torrentUrl?: string;
+  /** Direct HTTP stream URL — when set, bypass webtorrent entirely (e.g. debrid-cached streams). */
+  streamUrl?: string;
+  /** Index of the specific file within a multi-file torrent to play. */
+  fileIdx?: number;
+  /** Name of the Stremio addon that provided this result, e.g. "Torrentio". */
+  addonOrigin?: string;
 }
 
 export interface CastDevice {

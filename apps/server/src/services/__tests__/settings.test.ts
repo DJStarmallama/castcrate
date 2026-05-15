@@ -154,3 +154,152 @@ describe("settings — torrentDay block", () => {
     expect(s.torrentDay.enabled).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// stremioAddons block
+// ---------------------------------------------------------------------------
+describe("settings — stremioAddons block", () => {
+  it("has empty array as default", () => {
+    const s = getSettings();
+    expect(s.stremioAddons).toEqual([]);
+  });
+
+  it("round-trips a valid addon array", async () => {
+    await updateSettings({
+      stremioAddons: [
+        { id: "abc12345", url: "https://torrentio.strem.fun", name: "Torrentio", enabled: true },
+      ],
+    });
+    const s = getSettings();
+    expect(s.stremioAddons).toHaveLength(1);
+    expect(s.stremioAddons[0]!.url).toBe("https://torrentio.strem.fun");
+    expect(s.stremioAddons[0]!.name).toBe("Torrentio");
+    expect(s.stremioAddons[0]!.enabled).toBe(true);
+    expect(s.stremioAddons[0]!.id).toBe("abc12345");
+  });
+
+  it("whole-array replace — sending new array replaces existing", async () => {
+    await updateSettings({
+      stremioAddons: [
+        { id: "aaa11111", url: "https://first.example.com", name: "First", enabled: true },
+      ],
+    });
+    await updateSettings({
+      stremioAddons: [
+        { id: "bbb22222", url: "https://second.example.com", name: "Second", enabled: false },
+      ],
+    });
+    const s = getSettings();
+    expect(s.stremioAddons).toHaveLength(1);
+    expect(s.stremioAddons[0]!.url).toBe("https://second.example.com");
+  });
+
+  it("rejects addon with invalid URL (missing scheme)", async () => {
+    await updateSettings({
+      stremioAddons: [
+        { id: "ccc33333", url: "not-a-url", name: "Bad", enabled: true },
+      ],
+    });
+    const s = getSettings();
+    // Invalid URL → entry dropped → array is empty
+    expect(s.stremioAddons).toHaveLength(0);
+  });
+
+  it("rejects addon with ftp:// URL (only http/https allowed)", async () => {
+    await updateSettings({
+      stremioAddons: [
+        { id: "ddd44444", url: "ftp://example.com/manifest.json", name: "FTP", enabled: true },
+      ],
+    });
+    const s = getSettings();
+    expect(s.stremioAddons).toHaveLength(0);
+  });
+
+  it("accepts http:// URLs as well as https://", async () => {
+    await updateSettings({
+      stremioAddons: [
+        { id: "eee55555", url: "http://localhost:7000", name: "Local", enabled: true },
+      ],
+    });
+    const s = getSettings();
+    expect(s.stremioAddons).toHaveLength(1);
+    expect(s.stremioAddons[0]!.url).toBe("http://localhost:7000");
+  });
+
+  it("drops addon entry without an id", async () => {
+    await updateSettings({
+      stremioAddons: [
+        { id: "", url: "https://torrentio.strem.fun", name: "Torrentio", enabled: true },
+      ],
+    });
+    const s = getSettings();
+    expect(s.stremioAddons).toHaveLength(0);
+  });
+
+  it("drops addon entry with no id field at all", async () => {
+    await updateSettings({
+      stremioAddons: [
+        { url: "https://torrentio.strem.fun", name: "Torrentio", enabled: true } as unknown as { id: string; url: string; name: string; enabled: boolean },
+      ],
+    });
+    const s = getSettings();
+    expect(s.stremioAddons).toHaveLength(0);
+  });
+
+  it("truncates name to 60 characters", async () => {
+    const longName = "A".repeat(100);
+    await updateSettings({
+      stremioAddons: [
+        { id: "fff66666", url: "https://example.com", name: longName, enabled: true },
+      ],
+    });
+    const s = getSettings();
+    expect(s.stremioAddons[0]!.name).toHaveLength(60);
+  });
+
+  it("coerces enabled to boolean", async () => {
+    await updateSettings({
+      stremioAddons: [
+        { id: "ggg77777", url: "https://example.com", name: "Test", enabled: 1 as unknown as boolean },
+      ],
+    });
+    const s = getSettings();
+    expect(s.stremioAddons[0]!.enabled).toBe(true);
+  });
+
+  it("filters out invalid entries while keeping valid ones in mixed array", async () => {
+    await updateSettings({
+      stremioAddons: [
+        { id: "hhh88888", url: "https://valid.example.com", name: "Valid", enabled: true },
+        { id: "", url: "https://no-id.example.com", name: "No ID", enabled: true },
+        { id: "iii99999", url: "not-a-url", name: "Bad URL", enabled: false },
+      ],
+    });
+    const s = getSettings();
+    // Only the first (valid) entry survives
+    expect(s.stremioAddons).toHaveLength(1);
+    expect(s.stremioAddons[0]!.id).toBe("hhh88888");
+  });
+
+  it("proxyEnabled.stremio defaults to false", () => {
+    const s = getSettings();
+    expect(s.proxyEnabled.stremio).toBe(false);
+  });
+
+  it("proxyEnabled.stremio partial-merges correctly", async () => {
+    await updateSettings({ proxyEnabled: { stremio: true } });
+    const s = getSettings();
+    expect(s.proxyEnabled.stremio).toBe(true);
+    // Other proxy flags unaffected
+    expect(s.proxyEnabled.yts).toBe(false);
+    expect(s.proxyEnabled.knaben).toBe(false);
+  });
+
+  it("proxyEnabled partial-merge preserves stremio when updating other flags", async () => {
+    await updateSettings({ proxyEnabled: { stremio: true } });
+    await updateSettings({ proxyEnabled: { yts: true } });
+    const s = getSettings();
+    expect(s.proxyEnabled.stremio).toBe(true);
+    expect(s.proxyEnabled.yts).toBe(true);
+  });
+});

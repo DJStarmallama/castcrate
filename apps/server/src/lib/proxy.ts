@@ -22,7 +22,7 @@ import * as net from "node:net";
 import * as http from "node:http";
 import { getSettings, onSettingsUpdate } from "../services/settings.js";
 
-export type ProxyProvider = "yts" | "eztv" | "knaben" | "torrentday";
+export type ProxyProvider = "yts" | "eztv" | "knaben" | "torrentday" | "stremio";
 
 // ---------------------------------------------------------------------------
 // Cache — keyed by "<url>::<provider>" so each provider slot is independent.
