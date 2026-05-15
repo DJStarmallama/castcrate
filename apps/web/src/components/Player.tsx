@@ -24,32 +24,40 @@ export function Player({ movie, session, onClose }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  // HTTP-stream sessions (Stremio debrid) have infoHash === null.
+  // Torrent-based sessions always have a non-null infoHash.
+  const isHttpStream = session.infoHash === null;
+
   // Auto-transcode for codecs the Default Media Receiver can't play directly
   // (HEVC, AV1). The user toggle still wins over this — but if they haven't
   // explicitly opted in, we route HEVC/AV1 through ffmpeg so playback Just Works.
-  const autoTranscode = needsAutoTranscode(session.videoCodec);
-  const useTranscode = smooth || autoTranscode;
+  // HTTP-stream sessions are never transcoded (no webtorrent readable; ffmpeg
+  // URL-input pipeline is a future enhancement).
+  const autoTranscode = !isHttpStream && needsAutoTranscode(session.videoCodec);
+  const useTranscode = !isHttpStream && (smooth || autoTranscode);
+  // For local torrent streams, append /transcoded when needed. For absolute
+  // HTTP URLs (debrid), use the URL verbatim — appending a path suffix would
+  // produce a nonsense URL pointing at the CDN.
   const playUrl = useTranscode ? `${session.streamUrl}/transcoded` : session.streamUrl;
 
   const status = useQuery({
     queryKey: ["torrent-status", session.infoHash],
-    queryFn: () => api.torrentStatus(session.infoHash),
-    // The WebSocket bridge pushes torrent status into this cache key
-    // every ~1s. We keep a slow safety-net poll so the UI recovers if the
-    // WS drops. Stops entirely once the torrent finishes.
+    // infoHash is non-null for torrent sessions; query is disabled for HTTP streams.
+    queryFn: () => api.torrentStatus(session.infoHash!),
     refetchInterval: (q) => (q.state.data?.done ? false : 10_000),
-    enabled: !closing,
+    enabled: !closing && !isHttpStream,
   });
 
   // Multi-file torrents (season packs etc.): let the user pick which file
   // is streamed. The server keeps the chosen index in TorrentMeta and the
   // /stream/:hash endpoint resolves through that.
+  // Not applicable for HTTP-stream sessions.
   const filesQ = useQuery({
     queryKey: ["torrent-files", session.infoHash],
-    queryFn: () => api.torrentFiles(session.infoHash),
+    queryFn: () => api.torrentFiles(session.infoHash!),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
-    enabled: !closing,
+    enabled: !closing && !isHttpStream,
   });
   const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   useEffect(() => {
@@ -59,7 +67,7 @@ export function Player({ movie, session, onClose }: Props) {
     );
   }, [filesQ.data, selectedFileIndex]);
   const selectFile = useMutation({
-    mutationFn: (index: number) => api.selectTorrentFile(session.infoHash, index),
+    mutationFn: (index: number) => api.selectTorrentFile(session.infoHash!, index),
     onSuccess: (_data, index) => setSelectedFileIndex(index),
   });
   const files = filesQ.data?.files ?? [];
@@ -124,7 +132,10 @@ export function Player({ movie, session, onClose }: Props) {
       if (castSessionId) {
         await api.castControl(castSessionId, "stop").catch(() => {});
       }
-      await api.removeTorrent(session.infoHash).catch(() => {});
+      // HTTP-stream sessions (infoHash === null) have no webtorrent entry to remove.
+      if (session.infoHash) {
+        await api.removeTorrent(session.infoHash).catch(() => {});
+      }
     } finally {
       onClose();
     }
@@ -172,11 +183,14 @@ export function Player({ movie, session, onClose }: Props) {
             ))}
           </select>
         )}
-        <SubtitlePicker
-          infoHash={session.infoHash}
-          selected={subtitle}
-          onSelect={setSubtitle}
-        />
+        {/* SubtitlePicker only applies to torrent sessions with a known infoHash. */}
+        {session.infoHash && (
+          <SubtitlePicker
+            infoHash={session.infoHash}
+            selected={subtitle}
+            onSelect={setSubtitle}
+          />
+        )}
         <CastBar
           streamPath={playUrl}
           title={movie.title}
@@ -185,7 +199,8 @@ export function Player({ movie, session, onClose }: Props) {
           sessionId={castSessionId}
           onSessionChange={setCastSessionId}
           subtitle={subtitle}
-          infoHash={session.infoHash}
+          infoHash={session.infoHash ?? undefined}
+          stremioHttpStream={isHttpStream}
         />
         {!isCasting && (
           <button
@@ -218,14 +233,14 @@ export function Player({ movie, session, onClose }: Props) {
             // Force a fresh element when the subtitle track or selected
             // video file changes — <video> caches text tracks aggressively
             // and won't re-fetch a new src on its own.
-            key={`${session.infoHash}-${selectedFileIndex ?? "auto"}-${subtitle?.index ?? "none"}`}
+            key={`${session.infoHash ?? "http"}-${selectedFileIndex ?? "auto"}-${subtitle?.index ?? "none"}`}
             src={playUrl}
             controls
             autoPlay
             crossOrigin="anonymous"
             className="h-full max-h-full w-full max-w-full"
           >
-            {subtitle && (
+            {subtitle && session.infoHash && (
               <track
                 kind="subtitles"
                 src={`/stream/${session.infoHash}/subtitles/${subtitle.index}`}
@@ -237,7 +252,11 @@ export function Player({ movie, session, onClose }: Props) {
         )}
       </div>
       <footer className="border-t border-zinc-900 bg-zinc-950 px-6 py-3">
-        {status.data ? (
+        {isHttpStream ? (
+          <p className="text-xs text-zinc-500">
+            Direct stream via Stremio addon — no download progress to show.
+          </p>
+        ) : status.data ? (
           <ProgressBar
             progress={status.data.progress}
             speed={status.data.downloadSpeed}

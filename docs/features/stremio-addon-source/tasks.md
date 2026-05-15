@@ -85,12 +85,17 @@ Design decision: **direct passthrough** (Option A from implementation.md). Exter
 
 ## Phase 7 — UI
 
-- [ ] Find Indexers section in `Settings.tsx` and add "Stremio Addons" subsection below TorrentDay.
-- [ ] Help copy mentions Torrentio + Real-Debrid as the popular combo.
-- [ ] Add input + Add button (POST to `/api/stremio/addons`); inline validation result.
-- [ ] List of installed addons with name, truncated URL, Enable toggle, Test button, Remove button.
-- [ ] Warning copy: addon URLs may contain personalised secrets — treat like passwords.
-- [ ] Web client `TorrentResult` type extension; cast/play call sends `streamUrl` for stremio HTTP-shape results.
+- [x] Find Indexers section in `Settings.tsx` and add "Stremio Addons" subsection below TorrentDay.
+- [x] Help copy mentions Torrentio + Real-Debrid as the popular combo.
+- [x] Add input + Add button (POST to `/api/stremio/addons`); inline validation result.
+- [x] List of installed addons with name, truncated URL, Enable toggle, Test button, Remove button.
+- [x] Warning copy: addon URLs may contain personalised secrets — treat like passwords.
+- [x] Web client `TorrentResult` type extension; cast/play call sends `streamUrl` for stremio HTTP-shape results.
+- [x] `App.tsx` — Stremio HTTP-shape branch in `start` mutation (`streamUrl` instead of `magnet`).
+- [x] `App.tsx` — HEVC + Chromecast confirm dialog (`HevcCastConfirm`) for non-castFriendly HTTP-stream picks.
+- [x] `Player.tsx` — null-guard all `session.infoHash` usages; disable torrent queries for HTTP-stream sessions; footer shows "Direct stream" copy instead of "Waiting for peers".
+- [x] `CastBar.tsx` — `stremioHttpStream` prop; URL-expiry error message when cast fails on HTTP-stream session.
+- [x] Network section proxy provider row includes Stremio (was already present from prior run).
 
 ## Phase 8 — Tests
 

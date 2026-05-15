@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type ProxyProvider, type ProxyTestResult, type SettingsPatch, type TorrentDayTestResult } from "../lib/api";
+import { api, type ProxyProvider, type ProxyTestResult, type SettingsPatch, type StremioAddon, type StremioAddonTestResult, type TorrentDayTestResult } from "../lib/api";
 import { redactProxyUrl } from "../lib/format";
 import { useEscape } from "../hooks/useEscape";
 import { useLocalState } from "../hooks/useLocalState";
@@ -38,13 +38,26 @@ export function Settings({ onClose }: Props) {
     eztv: boolean;
     knaben: boolean;
     torrentday: boolean;
-  }>({ yts: false, eztv: false, knaben: false, torrentday: false });
+    stremio: boolean;
+  }>({ yts: false, eztv: false, knaben: false, torrentday: false, stremio: false });
   // Track the stored masked URL for display
   const [storedProxyUrl, setStoredProxyUrl] = useState<string | null>(null);
   // Test results per provider — reset when settings change
   const [proxyTestResults, setProxyTestResults] = useState<
     Partial<Record<ProxyProvider, ProxyTestResult | "loading">>
   >({});
+
+  // Stremio addon state
+  const [stremioAddons, setStremioAddons] = useState<StremioAddon[]>([]);
+  const [stremioUrlInput, setStremioUrlInput] = useState("");
+  const [stremioAddError, setStremioAddError] = useState("");
+  const [stremioAddSuccess, setStremioAddSuccess] = useState<{ name: string; warning?: string } | null>(null);
+  const [stremioAddPending, setStremioAddPending] = useState(false);
+  const [stremioTestResults, setStremioTestResults] = useState<
+    Partial<Record<string, StremioAddonTestResult | "loading">>
+  >({});
+  const [stremioRemoveConfirm, setStremioRemoveConfirm] = useState<string | null>(null);
+  const stremioAddonsVersion = useRef(0);
 
   // TorrentDay state
   const [tdEnabled, setTdEnabled] = useState(false);
@@ -78,9 +91,15 @@ export function Settings({ onClose }: Props) {
       eztv: settings.data.proxyEnabled?.eztv ?? false,
       knaben: settings.data.proxyEnabled?.knaben ?? false,
       torrentday: settings.data.proxyEnabled?.torrentday ?? false,
+      stremio: settings.data.proxyEnabled?.stremio ?? false,
     });
     // Reset test results when settings load/change
     setProxyTestResults({});
+    // Stremio addons
+    setStremioAddons(settings.data.stremioAddons ?? []);
+    stremioAddonsVersion.current += 1;
+    setStremioTestResults({});
+    setStremioAddSuccess(null);
     // TorrentDay
     const td = settings.data.torrentDay;
     setTdEnabled(td?.enabled ?? false);
@@ -238,6 +257,92 @@ export function Settings({ onClose }: Props) {
         const msg = err instanceof Error ? err.message : "request failed";
         setTdTestResult({ ok: false, error: msg });
       }
+    }
+  };
+
+  const STREMIO_URL_RE = /^https?:\/\/.+/;
+
+  const addStremioAddon = async () => {
+    const trimmed = stremioUrlInput.trim();
+    if (!STREMIO_URL_RE.test(trimmed)) {
+      setStremioAddError("URL must start with http:// or https://");
+      return;
+    }
+    setStremioAddError("");
+    setStremioAddSuccess(null);
+    setStremioAddPending(true);
+    try {
+      const result = await api.addStremioAddon(trimmed);
+      setStremioUrlInput("");
+      const nextAddons = [...stremioAddons, result.addon];
+      setStremioAddons(nextAddons);
+      stremioAddonsVersion.current += 1;
+      setStremioTestResults({});
+      setStremioAddSuccess({ name: result.addon.name, warning: result.warning });
+      // Also update the query cache so the effect re-sync doesn't clobber local state
+      qc.setQueryData(["runtime-settings"], (old: typeof settings.data) =>
+        old ? { ...old, stremioAddons: nextAddons } : old,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "request failed";
+      setStremioAddError(msg);
+    } finally {
+      setStremioAddPending(false);
+    }
+  };
+
+  const toggleStremioAddon = (id: string, enabled: boolean) => {
+    const nextAddons = stremioAddons.map((a) =>
+      a.id === id ? { ...a, enabled } : a,
+    );
+    setStremioAddons(nextAddons);
+    stremioAddonsVersion.current += 1;
+    setStremioTestResults((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    save.mutate({ stremioAddons: nextAddons });
+  };
+
+  const runStremioTest = async (id: string) => {
+    setStremioTestResults((prev) => ({ ...prev, [id]: "loading" }));
+    const version = stremioAddonsVersion.current;
+    try {
+      const result = await api.testStremioAddon(id);
+      if (stremioAddonsVersion.current === version) {
+        setStremioTestResults((prev) => ({ ...prev, [id]: result }));
+      }
+    } catch (err) {
+      if (stremioAddonsVersion.current === version) {
+        const msg = err instanceof Error ? err.message : "request failed";
+        setStremioTestResults((prev) => ({
+          ...prev,
+          [id]: { ok: false, error: msg },
+        }));
+      }
+    }
+  };
+
+  const removeStremioAddon = async (id: string) => {
+    try {
+      await api.removeStremioAddon(id);
+      const nextAddons = stremioAddons.filter((a) => a.id !== id);
+      setStremioAddons(nextAddons);
+      stremioAddonsVersion.current += 1;
+      setStremioTestResults((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      qc.setQueryData(["runtime-settings"], (old: typeof settings.data) =>
+        old ? { ...old, stremioAddons: nextAddons } : old,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "request failed";
+      setStremioAddError(msg);
+    } finally {
+      setStremioRemoveConfirm(null);
     }
   };
 
@@ -441,6 +546,7 @@ export function Settings({ onClose }: Props) {
                 { key: "eztv", label: "EZTV" },
                 { key: "knaben", label: "Knaben" },
                 { key: "torrentday", label: "TorrentDay" },
+                { key: "stremio", label: "Stremio" },
               ] as { key: ProxyProvider; label: string }[]
             ).map(({ key, label }) => {
               const testResult = proxyTestResults[key];
@@ -684,6 +790,149 @@ export function Settings({ onClose }: Props) {
                 not permit third-party clients.
               </p>
             </div>
+          </div>
+
+          {/* Stremio Addons subsection */}
+          <div className="mt-6 border-t border-zinc-800 pt-5">
+            <p className="text-xs font-medium text-zinc-300">Stremio Addons</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Paste a Stremio addon URL to pull in its indexer coverage. Most popular:{" "}
+              <strong className="text-zinc-400">Torrentio</strong> with optional Real-Debrid.
+              Self-host or use a personalised configured URL if rate-limited.
+            </p>
+
+            {/* Add row */}
+            <div className="mt-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={stremioUrlInput}
+                  onChange={(e) => { setStremioUrlInput(e.target.value); setStremioAddError(""); setStremioAddSuccess(null); }}
+                  placeholder="Manifest URL — e.g. https://torrentio.strem.fun/.../manifest.json"
+                  className="flex-1 rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
+                />
+                <button
+                  onClick={() => void addStremioAddon()}
+                  disabled={stremioUrlInput.trim() === "" || stremioAddPending}
+                  className="rounded-md bg-emerald-500 px-3 py-1 text-xs font-medium text-black hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {stremioAddPending ? "Adding…" : "Add"}
+                </button>
+              </div>
+              {stremioAddError && (
+                <p className="mt-1 text-xs text-red-400">{stremioAddError}</p>
+              )}
+              {stremioAddSuccess && (
+                <div className="mt-1 space-y-1">
+                  <p className="text-xs text-emerald-400">✓ Added: {stremioAddSuccess.name}</p>
+                  {stremioAddSuccess.warning && (
+                    <p className="text-xs text-amber-400">⚠ {stremioAddSuccess.warning}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Addon list */}
+            {stremioAddons.length === 0 ? (
+              <p className="mt-3 text-xs text-zinc-600">No Stremio addons configured.</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {stremioAddons.map((addon) => {
+                  const testResult = stremioTestResults[addon.id];
+                  return (
+                    <div
+                      key={addon.id}
+                      className="rounded-lg border border-zinc-700 bg-zinc-950 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-zinc-200">{addon.name}</p>
+                          <code className="block truncate text-[10px] text-zinc-600 mt-0.5">
+                            {addon.url}
+                          </code>
+                        </div>
+                        <div className="flex flex-shrink-0 items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id={`stremio-enabled-${addon.id}`}
+                            checked={addon.enabled}
+                            onChange={(e) => toggleStremioAddon(addon.id, e.target.checked)}
+                            className="h-4 w-4 rounded border-zinc-600 accent-emerald-500"
+                            title={addon.enabled ? "Disable addon" : "Enable addon"}
+                          />
+                          <label
+                            htmlFor={`stremio-enabled-${addon.id}`}
+                            className="text-xs text-zinc-400 cursor-pointer"
+                          >
+                            {addon.enabled ? "Enabled" : "Disabled"}
+                          </label>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => void runStremioTest(addon.id)}
+                          disabled={testResult === "loading"}
+                          className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800 disabled:opacity-40"
+                        >
+                          {testResult === "loading" ? "Testing…" : "Test"}
+                        </button>
+                        <button
+                          onClick={() => setStremioRemoveConfirm(addon.id)}
+                          className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-xs text-red-400 hover:bg-zinc-800"
+                        >
+                          Remove
+                        </button>
+                        {stremioRemoveConfirm === addon.id && (
+                          <span className="flex items-center gap-1 text-xs text-zinc-400">
+                            Remove this addon?
+                            <button
+                              onClick={() => void removeStremioAddon(addon.id)}
+                              className="rounded-md bg-red-600 px-2 py-0.5 text-xs text-white hover:bg-red-500"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => setStremioRemoveConfirm(null)}
+                              className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                      {testResult && testResult !== "loading" && (
+                        <div className="mt-1.5">
+                          {testResult.ok && (testResult.sampleCount ?? 0) > 0 ? (
+                            <span className="text-xs text-emerald-400">
+                              ✓ {testResult.sampleCount} results — first: {testResult.firstTitle ?? ""}
+                              {testResult.hasStreamUrl ? (
+                                <span className="ml-2 rounded-full border border-amber-600/40 bg-amber-900/30 px-1.5 py-0.5 text-[10px] text-amber-400">
+                                  Real-Debrid wired
+                                </span>
+                              ) : (
+                                <span className="ml-1 text-zinc-600">(torrent magnets only)</span>
+                              )}
+                            </span>
+                          ) : testResult.ok && (testResult.sampleCount ?? 0) === 0 ? (
+                            <span className="text-xs text-amber-400">
+                              ✓ Reachable, but 0 results for Inception (may be anime-only or not configured)
+                            </span>
+                          ) : (
+                            <span className="text-xs text-red-400">✗ {testResult.error ?? "unknown error"}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Security warning */}
+            <p className="mt-3 text-xs text-zinc-600">
+              Addon URLs may contain personalised secrets (Real-Debrid API keys). Treat them like
+              passwords — do not share screenshots.
+            </p>
           </div>
         </div>
 

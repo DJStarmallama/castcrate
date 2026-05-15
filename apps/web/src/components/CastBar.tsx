@@ -12,6 +12,9 @@ interface Props {
   sessionId: string | null;
   subtitle?: SubtitleTrack | null;
   infoHash?: string;
+  /** When true, cast errors surface a "stream URL may have expired" message
+   *  instead of the generic error text. Used for Stremio HTTP-stream sessions. */
+  stremioHttpStream?: boolean;
 }
 
 export function CastBar({
@@ -23,6 +26,7 @@ export function CastBar({
   sessionId,
   subtitle,
   infoHash,
+  stremioHttpStream = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -120,7 +124,11 @@ export function CastBar({
             </button>
           ))}
           {playOn.isError && (
-            <p className="px-3 py-2 text-xs text-red-400">{playOn.error.message}</p>
+            <p className="px-3 py-2 text-xs text-red-400">
+              {stremioHttpStream
+                ? "The stream URL may have expired or be unreachable. Search again to refresh."
+                : playOn.error.message}
+            </p>
           )}
         </div>
       )}

@@ -34,11 +34,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export interface StartTorrentResult {
-  infoHash: string;
+  infoHash: string | null;
   videoName: string;
   videoLength: number;
   streamUrl: string;
   videoCodec: string | null;
+  transcodable?: boolean;
 }
 
 export interface TorrentStatus {
@@ -88,12 +89,21 @@ export interface ProxyEnabled {
   eztv: boolean;
   knaben: boolean;
   torrentday: boolean;
+  stremio: boolean;
 }
 
 export interface TorrentDaySettings {
   enabled: boolean;
   uid: string | null;
   pass: string | null;
+}
+
+export interface StremioAddon {
+  id: string;
+  /** URL returned by the server — may be masked (secrets replaced with ****) */
+  url: string;
+  name: string;
+  enabled: boolean;
 }
 
 export interface RuntimeSettings {
@@ -103,11 +113,20 @@ export interface RuntimeSettings {
   proxyUrl: string | null;
   proxyEnabled: ProxyEnabled;
   torrentDay: TorrentDaySettings;
+  stremioAddons: StremioAddon[];
 }
 
 export interface TorrentDayTestResult {
   ok: boolean;
   sample?: string[];
+  error?: string;
+}
+
+export interface StremioAddonTestResult {
+  ok: boolean;
+  sampleCount?: number;
+  firstTitle?: string;
+  hasStreamUrl?: boolean;
   error?: string;
 }
 
@@ -117,7 +136,7 @@ export type SettingsPatch = Omit<Partial<RuntimeSettings>, "torrentDay"> & {
   torrentDay?: Partial<TorrentDaySettings> | null;
 };
 
-export type ProxyProvider = "yts" | "eztv" | "knaben" | "torrentday";
+export type ProxyProvider = "yts" | "eztv" | "knaben" | "torrentday" | "stremio";
 
 export interface ProxyTestResult {
   ok: boolean;
@@ -190,6 +209,7 @@ export const api = {
   startTorrent: (params: {
     magnet?: string;
     torrentUrl?: string;
+    streamUrl?: string;
     source?: string;
     title?: string;
     posterUrl?: string | null;
@@ -307,6 +327,20 @@ export const api = {
       similar: DiscoverTitle[];
     }>(url.pathname + url.search);
   },
+  addStremioAddon: (url: string) =>
+    request<{ addon: StremioAddon; warning?: string }>("/api/stremio/addons", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }),
+  removeStremioAddon: (id: string) =>
+    request<void>(`/api/stremio/addons/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  testStremioAddon: (id: string) =>
+    request<StremioAddonTestResult>(
+      `/api/stremio/test/${encodeURIComponent(id)}`,
+    ),
 };
 
 export interface SubtitleTrack {

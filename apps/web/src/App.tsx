@@ -49,6 +49,14 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showTdWarning, setShowTdWarning] = useState(false);
   const [typeFilter, setTypeFilter] = useState<"all" | "movie" | "series">("all");
+  // Stremio HEVC confirm: holds a pending pick when user selects a non-castFriendly
+  // Stremio HTTP-stream result. Cleared on confirm or cancel.
+  const [hevcPendingPick, setHevcPendingPick] = useState<{
+    torrent: TorrentResult;
+    title: string;
+    posterUrl: string | null;
+    imdbId: string;
+  } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const debounced = useDebounced(query, 300);
   // Stream torrent + cast state pushes from /ws into the TanStack Query cache.
@@ -78,17 +86,31 @@ export default function App() {
       title: string;
       posterUrl: string | null;
       imdbId: string;
-    }) =>
-      api.startTorrent({
-        magnet: params.torrent.source === "torrentday" ? undefined : params.torrent.magnet,
-        torrentUrl: params.torrent.torrentUrl,
-        source: params.torrent.source,
+    }) => {
+      const t = params.torrent;
+      // Stremio HTTP-shape: server returns the external URL directly, bypassing webtorrent.
+      if (t.source === "stremio" && t.streamUrl) {
+        return api.startTorrent({
+          streamUrl: t.streamUrl,
+          source: "stremio",
+          title: params.title,
+          posterUrl: params.posterUrl,
+          imdbId: params.imdbId,
+          resolution: t.resolution,
+          videoCodec: t.videoCodec,
+        });
+      }
+      return api.startTorrent({
+        magnet: t.source === "torrentday" ? undefined : t.magnet,
+        torrentUrl: t.torrentUrl,
+        source: t.source,
         title: params.title,
         posterUrl: params.posterUrl,
         imdbId: params.imdbId,
-        resolution: params.torrent.resolution,
-        videoCodec: params.torrent.videoCodec,
-      }),
+        resolution: t.resolution,
+        videoCodec: t.videoCodec,
+      });
+    },
     onSuccess: (data, params) => {
       setSession(data);
       setSessionTitle({ title: params.title, poster: params.posterUrl });
@@ -103,26 +125,43 @@ export default function App() {
     onError: (err: Error) => setStartError(err.message),
   });
 
+  // Returns true when a pick should be paused for the HEVC confirm dialog.
+  // Only applies to Stremio HTTP-shape (streamUrl set) + non-castFriendly.
+  // Magnet-based Stremio results go through ffmpeg transcode; local <video>
+  // handles HEVC natively — neither needs the warning.
+  const isHevcHttpPick = (t: TorrentResult) =>
+    t.source === "stremio" && Boolean(t.streamUrl) && !t.castFriendly;
+
   const startMovie = (t: TorrentResult) => {
     if (!findFor) return;
-    start.mutate({
+    const pick = {
       torrent: t,
       title: findFor.title,
       posterUrl: findFor.poster,
       imdbId: findFor.imdbId,
-    });
+    };
+    if (isHevcHttpPick(t)) {
+      setHevcPendingPick(pick);
+      return;
+    }
+    start.mutate(pick);
   };
 
   const startEpisode = (t: TorrentResult) => {
     if (!pickEpisode) return;
     const { series, episode } = pickEpisode;
     const epTag = `S${episode.season}E${String(episode.episode).padStart(2, "0")}`;
-    start.mutate({
+    const pick = {
       torrent: t,
       title: `${series.title} ${epTag}${episode.title ? ` — ${episode.title}` : ""}`,
       posterUrl: series.poster,
       imdbId: series.imdbId,
-    });
+    };
+    if (isHevcHttpPick(t)) {
+      setHevcPendingPick(pick);
+      return;
+    }
+    start.mutate(pick);
   };
 
   const closePlayer = () => {
@@ -319,8 +358,66 @@ export default function App() {
           }}
         />
       )}
+      {hevcPendingPick && (
+        <HevcCastConfirm
+          onCancel={() => setHevcPendingPick(null)}
+          onConfirm={() => {
+            const pick = hevcPendingPick;
+            setHevcPendingPick(null);
+            start.mutate(pick);
+          }}
+        />
+      )}
       </main>
     </>
+  );
+}
+
+// Shown when user picks a Stremio HTTP-stream result that isn't cast-friendly
+// (typically HEVC/x265). The local <video> tag handles HEVC fine, so this
+// dialog only fires when it would land on a Chromecast via CastBar.
+// We can't intercept at cast-time without rearchitecting CastBar, so we warn
+// at pick-time instead — conservative but always accurate.
+function HevcCastConfirm({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-amber-700/40 bg-zinc-950 px-8 py-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-semibold text-amber-200">
+          This release may not play on older Chromecasts.
+        </h3>
+        <p className="mt-3 text-sm text-zinc-300">
+          The codec (typically HEVC/x265) is not supported by all Chromecast models. Other
+          variants of the same release usually appear in the list — consider picking an x264
+          1080p result instead.
+        </p>
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="rounded-full border border-zinc-700 bg-zinc-900 px-5 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="rounded-full bg-amber-500 px-5 py-2 text-sm font-medium text-black hover:bg-amber-400"
+          >
+            Cast anyway
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
