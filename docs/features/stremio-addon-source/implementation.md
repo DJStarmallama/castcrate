@@ -211,27 +211,97 @@ EZTV → Stremio (if imdbId) → Knaben → TD
 
 **imdbId plumbing:** the movie search route doesn't currently pass imdbId — it accepts `title` + `year`. Add `imdbId` as a query param (client already has it from OMDb detail page); fall back to skipping Stremio if absent.
 
-## `/api/torrent/start` — HTTP stream branch
+## Phase 5 — HTTP stream pipeline
 
-Today the route accepts `{ magnet | torrentUrl }`. Add `{ streamUrl }` shape:
+### Audit-driven design decision
+
+The Chromecast / web-player pipeline today assumes every `streamPath` is a local path served by us (`cast.ts:70` builds `http://<LAN_IP>:3000<streamPath>`). HTTP streams from debrid CDNs (Real-Debrid, AllDebrid, Premiumize) are externally hosted — that assumption breaks.
+
+Three patterns considered:
+
+| Approach | Pros | Cons |
+|---|---|---|
+| **(A) Direct passthrough** — pass external URL to Chromecast/`<video>` unchanged | Lowest latency; one copy of stream over LAN; cheapest to ship | No server-side transcode; HEVC may fail on older Chromecasts; no history tracking |
+| (B) Server-side proxy — pipe external URL through `/stream/proxy/<token>` | Unified URL contract; transcode capability; history tracking | Doubles LAN bandwidth (CDN→laptop→Chromecast); ~100 Mbps for 4K |
+| (C) Hybrid — A by default, B when user toggles transcode | Best of both | Adds complexity now for an unproven user need |
+
+**Decision: ship (A) for v1.** Reasoning:
+- Streams from debrid CDNs are CORS-friendly and Chromecast-friendly in the common case.
+- Doubling LAN bandwidth for proxy mode is real — 4K HDR can saturate older networks.
+- Most users will pick a 1080p/x264 result anyway (Stremio almost always returns multiple variants of the same release); HEVC-on-non-Ultra-Chromecast is rare in practice.
+- The transcode pipeline currently takes a webtorrent `Readable`, not a URL — building a URL-input ffmpeg pipeline is real work that doesn't have to block this phase.
+
+### Server changes
+
+**`/api/torrent/start` — new `streamUrl` body branch:**
 
 ```ts
 if (body.streamUrl) {
-  // Skip webtorrent entirely. Validate it's https/http.
-  // Return immediately with a synthetic session:
-  return reply.send({
-    streamUrl: body.streamUrl,      // play directly
+  // External HTTP stream — bypass webtorrent entirely.
+  if (!/^https?:\/\//.test(body.streamUrl)) {
+    return reply.code(400).send({ error: "streamUrl must be http(s)" });
+  }
+  return {
     infoHash: null,
-    name: body.title ?? "stream",
-    ready: true,
-    transcodable: false,            // can't ffmpeg-transcode opaque CDN URLs cheaply
-  });
+    videoName: body.title ?? "stream",
+    videoLength: 0,                // unknown; CDN tells the client via Content-Length
+    streamUrl: body.streamUrl,     // ABSOLUTE URL — cast.ts must detect and pass through
+    videoCodec: body.videoCodec ?? null,
+    transcodable: false,
+  };
 }
 ```
 
-**Web client change:** when selecting a result with `source === "stremio"` and `streamUrl`, send `{ streamUrl }` to `/api/torrent/start`. The cast/play handler points the player / Chromecast directly at `streamUrl`.
+No `setMeta()` call (no infoHash to key on). HTTP-stream sessions are intentionally ephemeral.
 
-**Caveat — Chromecast and CORS:** Chromecast loads URLs directly from the network. If the debrid URL doesn't serve with permissive CORS (it usually does — these are CDN endpoints), casting works. If not, we'd need to proxy through `/stream/proxy?url=...`. Defer that until a real failure surfaces; add a TODO note.
+**`/api/cast/play` — detect absolute URLs in `streamPath`:**
+
+```ts
+const isAbsolute = /^https?:\/\//i.test(streamPath);
+const streamUrl = isAbsolute
+  ? streamPath
+  : `http://${ip}:${config.port}${streamPath}`;
+```
+
+The LAN IP lookup is irrelevant when `streamPath` is absolute — but harmless to compute. Keep the check; it still applies to the magnet path.
+
+**History tracking:** `infoHashFromStreamPath()` returns `null` for absolute URLs. The `if (infoHash) { … appendHistory … }` block is already null-guarded — HTTP streams skip history. Acceptable for v1; add a TODO comment.
+
+### Web client changes
+
+`/api/torrent/start` invocation:
+- If picked result has `source === "stremio"` AND `streamUrl` is set → POST `{ streamUrl, source: "stremio", title, posterUrl, imdbId, … }`.
+- Else if `source === "stremio"` AND only `magnet` → POST `{ magnet, source: "stremio", … }` (existing magnet path).
+- Else existing routing for yts/eztv/knaben/torrentday.
+
+Cast/play invocation: send `streamPath` as the URL returned by `/api/torrent/start`. The server-side detector handles both absolute and relative.
+
+### Out of scope for Phase 5
+
+- Server-side transcode for HTTP streams (ffmpeg URL input). Future enhancement.
+- Per-stream-URL history entries (would need a synthetic ID).
+- Persistent active-stream tracking for HTTP streams in `/api/torrents` (HTTP streams don't appear in the active downloads list).
+- Re-querying the addon at cast time for a fresh URL if the stored one is expired. Listed as future enhancement.
+
+## Adapter fixes bundled into Phase 5
+
+The audit surfaced seven small issues that should land alongside the Phase 5 pipeline work — same surface area, minimal risk:
+
+1. **Validate tracker schemes in `buildMagnetFromStream`.** Only keep `sources[]` entries that, after stripping `tracker:`, start with `udp://`, `http://`, or `https://`. Drops malformed entries silently.
+
+2. **Boost HTTP-stream results in the rank tie-breaker.** In `fanOut`, after `deduped.sort(rankTorrent)`, do a stable secondary sort that pushes entries with `streamUrl` above entries without, within the same quality bucket. Instant > P2P.
+
+3. **`validateAddon` checks `idPrefixes`.** If `manifest.idPrefixes` is present and doesn't include `"tt"`, add a non-fatal warning to the return: `{ ok: true, manifest, warning: "addon may not support IMDb-keyed (tt…) lookups" }`. UI displays it on add.
+
+4. **`validateAddon` checks `behaviorHints.configurationRequired`.** If set + true on the supplied URL, return: `{ ok: true, manifest, warning: "addon requires configuration — visit the addon's setup page to get a personalised URL" }`.
+
+5. **`chmod 600` the settings file.** In `services/settings.ts`, after each `writeFile`/`rename`, call `fs.chmod(PATH, 0o600)`. Covers the existing TD/proxy creds retroactively. One-liner with a comment.
+
+6. **`castFriendly` exposed prominently for Stremio results in UI.** Phase 7 task — flag here so it doesn't get forgotten. When a Stremio result is non-castFriendly, the Cast button shows a confirm dialog: "This release may not play on older Chromecasts — pick an x264 variant instead?"
+
+7. **URL-expiry error UI.** When `/api/cast/play` errors mid-stream from an external URL (typically HTTP 410/404), surface a clear toast: "The stream URL has expired — search again to refresh." Soft requirement for Phase 5; can land with Phase 7.
+
+These are tracked individually in tasks.md.
 
 ## `services/torrent.ts` — `fileIdx` support
 

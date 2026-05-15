@@ -70,11 +70,13 @@ describe("stremio adapter", () => {
   let manifestFixture: string;
   let manifestNoStreamFixture: string;
   let movieStreamsFixture: string;
+  let manifestKitsuOnlyFixture: string;
 
   beforeEach(async () => {
     manifestFixture = await readFile(join(FIXTURES, "stremio-manifest.json"), "utf8");
     manifestNoStreamFixture = await readFile(join(FIXTURES, "stremio-manifest-no-stream.json"), "utf8");
     movieStreamsFixture = await readFile(join(FIXTURES, "stremio-movie-streams.json"), "utf8");
+    manifestKitsuOnlyFixture = await readFile(join(FIXTURES, "stremio-manifest-kitsu-only.json"), "utf8");
     _clearCache();
     vi.unstubAllGlobals();
     mockSettings();
@@ -538,6 +540,234 @@ describe("stremio adapter", () => {
       expect(calledUrls[0]).toContain("/stream/series/tt0903747:1:5.json");
       expect(outcome.results).toEqual([]);
       expect(outcome.errors).toEqual([]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase 5 — adapter fixes
+  // -------------------------------------------------------------------------
+
+  describe("buildMagnetFromStream — tracker scheme filtering (Phase 5a)", () => {
+    beforeEach(() => {
+      mockSettings([
+        { id: "e1", url: "https://torrentio.strem.fun", name: "Torrentio", enabled: true },
+      ]);
+      _clearCache();
+    });
+
+    it("keeps only udp:// and http(s):// tracker entries; drops wss:// and bare-host entries", async () => {
+      const mixedSources = {
+        streams: [
+          {
+            name: "Filtered 1080p",
+            title: "Inception.2010.1080p.BluRay.x264",
+            infoHash: "aabbcc1111111111111111111111111111111111",
+            sources: [
+              "tracker:udp://valid.example:80",
+              "tracker:wss://bad.example",
+              "tracker:plain.host:1337",
+            ],
+          },
+        ],
+      };
+
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => mixedSources,
+      }));
+
+      const { results } = await searchStremioMovie("tt9000001");
+
+      expect(results).toHaveLength(1);
+      const magnet = results[0]!.magnet;
+      // Only the udp:// tracker should appear
+      expect(magnet).toContain(encodeURIComponent("udp://valid.example:80"));
+      expect(magnet).not.toContain("wss%3A");
+      expect(magnet).not.toContain("plain.host");
+      // Fallback trackers must NOT appear — at least one valid tracker was found
+      expect(magnet).not.toContain(encodeURIComponent(FALLBACK_TRACKERS[0]!));
+    });
+  });
+
+  describe("HTTP-shape sort boost within same rank bucket (Phase 5b)", () => {
+    it("places streamUrl result above magnet-only result of identical title/resolution", async () => {
+      mockSettings([
+        { id: "f1", url: "https://torrentio.strem.fun", name: "Torrentio", enabled: true },
+      ]);
+      _clearCache();
+
+      // Both streams have identical title so rankTorrent ties them;
+      // the streamUrl one should sort first.
+      const tiedStreams = {
+        streams: [
+          {
+            name: "Torrentio 1080p",
+            title: "Inception.2010.1080p.BluRay.x264",
+            infoHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            sources: ["tracker:udp://tracker.opentrackr.org:1337/announce"],
+          },
+          {
+            name: "Torrentio RD 1080p",
+            title: "Inception.2010.1080p.BluRay.x264",
+            url: "https://download.real-debrid.com/d/xyz/inception.mkv",
+          },
+        ],
+      };
+
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => tiedStreams,
+      }));
+
+      const { results } = await searchStremioMovie("tt9000002");
+
+      expect(results).toHaveLength(2);
+      // HTTP-shape (streamUrl) must be first
+      expect(results[0]!.streamUrl).toBeDefined();
+      expect(results[1]!.magnet).toMatch(/^magnet:/);
+    });
+  });
+
+  describe("validateAddon — idPrefixes warning (Phase 5c)", () => {
+    it("returns warning when idPrefixes is present and does not include 'tt'", async () => {
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => JSON.parse(manifestKitsuOnlyFixture),
+      }));
+
+      const result = await validateAddon("https://kitsu.example.com");
+
+      expect(result.ok).toBe(true);
+      expect(result.manifest).toBeDefined();
+      expect(result.warning).toBeDefined();
+      expect(result.warning).toContain("IMDb");
+    });
+
+    it("does not warn when idPrefixes is absent (unconstrained addon)", async () => {
+      // stremio-manifest.json has no idPrefixes field
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => JSON.parse(manifestFixture),
+      }));
+
+      const result = await validateAddon("https://torrentio.strem.fun");
+
+      expect(result.ok).toBe(true);
+      expect(result.warning).toBeUndefined();
+    });
+
+    it("does not warn when idPrefixes includes 'tt'", async () => {
+      const manifestWithTt = {
+        id: "org.example.tt",
+        version: "1.0.0",
+        name: "IMDb Addon",
+        resources: ["stream"],
+        types: ["movie"],
+        idPrefixes: ["tt", "kitsu:"],
+      };
+
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => manifestWithTt,
+      }));
+
+      const result = await validateAddon("https://imdb.example.com");
+
+      expect(result.ok).toBe(true);
+      expect(result.warning).toBeUndefined();
+    });
+  });
+
+  describe("validateAddon — behaviorHints.configurationRequired warning (Phase 5c)", () => {
+    it("returns warning when configurationRequired is true", async () => {
+      const manifestRequiresConfig = {
+        id: "org.example.config",
+        version: "1.0.0",
+        name: "Needs Config Addon",
+        resources: ["stream"],
+        types: ["movie"],
+        behaviorHints: { configurationRequired: true },
+      };
+
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => manifestRequiresConfig,
+      }));
+
+      const result = await validateAddon("https://config-required.example.com");
+
+      expect(result.ok).toBe(true);
+      expect(result.warning).toBeDefined();
+      expect(result.warning).toContain("configuration");
+    });
+
+    it("does not warn when configurationRequired is false", async () => {
+      const manifestNoConfig = {
+        id: "org.example.noconfig",
+        version: "1.0.0",
+        name: "No Config Addon",
+        resources: ["stream"],
+        types: ["movie"],
+        behaviorHints: { configurationRequired: false },
+      };
+
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => manifestNoConfig,
+      }));
+
+      const result = await validateAddon("https://no-config.example.com");
+
+      expect(result.ok).toBe(true);
+      expect(result.warning).toBeUndefined();
+    });
+
+    it("does not warn when behaviorHints is absent", async () => {
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => JSON.parse(manifestFixture),
+      }));
+
+      const result = await validateAddon("https://torrentio.strem.fun");
+
+      expect(result.ok).toBe(true);
+      expect(result.warning).toBeUndefined();
+    });
+  });
+
+  describe("validateAddon — combined warning (Phase 5c)", () => {
+    it("concatenates both warnings with ' / ' when both conditions fire", async () => {
+      const manifestBoth = {
+        id: "org.example.both",
+        version: "1.0.0",
+        name: "Both Issues Addon",
+        resources: ["stream"],
+        types: ["movie"],
+        idPrefixes: ["kitsu:"],
+        behaviorHints: { configurationRequired: true },
+      };
+
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => manifestBoth,
+      }));
+
+      const result = await validateAddon("https://both.example.com");
+
+      expect(result.ok).toBe(true);
+      expect(result.warning).toBeDefined();
+      expect(result.warning).toContain("IMDb");
+      expect(result.warning).toContain("configuration");
+      expect(result.warning).toContain(" / ");
     });
   });
 });

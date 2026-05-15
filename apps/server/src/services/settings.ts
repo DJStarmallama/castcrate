@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile, chmod } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -106,6 +106,13 @@ async function persist(): Promise<void> {
   await ensureDir();
   await writeFile(TMP_PATH, JSON.stringify(overrides, null, 2), "utf8");
   await rename(TMP_PATH, PATH);
+  // 0600 — settings.json contains bearer secrets (TD cookies, proxy URL, Stremio addon URLs).
+  try {
+    await chmod(PATH, 0o600);
+  } catch (err) {
+    // Swallow — some filesystems (e.g. Windows) don't support chmod.
+    console.log(`settings: chmod 600 failed (non-fatal): ${(err as Error).message}`);
+  }
 }
 
 /**

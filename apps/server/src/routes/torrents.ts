@@ -253,6 +253,7 @@ export async function torrentRoutes(app: FastifyInstance) {
     Body: {
       magnet?: string;
       torrentUrl?: string;
+      streamUrl?: string;
       source?: string;
       title?: string;
       posterUrl?: string | null;
@@ -261,7 +262,24 @@ export async function torrentRoutes(app: FastifyInstance) {
       videoCodec?: string | null;
     };
   }>("/api/torrent/start", async (req, reply) => {
-    const { magnet, torrentUrl, source } = req.body ?? {};
+    const { magnet, torrentUrl, streamUrl, source } = req.body ?? {};
+
+    // Stremio HTTP-stream branch — external URL, bypass webtorrent entirely.
+    if (source === "stremio" && streamUrl) {
+      if (!/^https?:\/\//.test(streamUrl)) {
+        return reply.code(400).send({ error: "streamUrl must be http(s)" });
+      }
+      // No setMeta() — HTTP streams are ephemeral, there is no infoHash to key on.
+      return {
+        infoHash: null,
+        videoName: req.body?.title ?? "stream",
+        videoLength: 0,
+        streamUrl,          // absolute URL — cast.ts detects and passes through unchanged
+        videoCodec: req.body?.videoCodec ?? null,
+        transcodable: false,
+      };
+    }
+
     // TorrentDay results carry a torrentUrl (blob path) instead of a magnet.
     if (source === "torrentday") {
       if (!torrentUrl) {

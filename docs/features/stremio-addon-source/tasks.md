@@ -39,10 +39,39 @@
 - [x] `tried` array gets `"stremio"` when invoked.
 - [x] Per-addon errors captured in errors array without failing the chain.
 
-## Phase 5 — Stream pipeline (`routes/torrents.ts`)
+## Phase 5 — Stream pipeline (audit-revised scope)
 
-- [ ] `POST /api/torrent/start` — when body has `streamUrl`, skip webtorrent: return synthetic session with `streamUrl` for the cast/play handler to use directly.
-- [ ] Confirm cast/play pipeline accepts an HTTP URL not just an internal `/stream/...` path. If not, add a thin pass-through or `/stream/proxy?url=...` route (CORS-permissive responses likely from debrid CDNs — defer proxy until needed).
+Design decision: **direct passthrough** (Option A from implementation.md). External URL → Chromecast / `<video>` directly. No server-side proxy or transcode for HTTP streams in this phase.
+
+### Pipeline plumbing
+
+- [x] `POST /api/torrent/start` — new `streamUrl` body branch: validates `http(s)://` scheme, returns synthetic session `{ infoHash: null, streamUrl: <absolute URL>, videoName, videoLength: 0, videoCodec, transcodable: false }`. No `setMeta()`.
+- [x] `POST /api/cast/play` — detect absolute URL in `streamPath` and pass through unchanged (skip the `http://${ip}:${config.port}` prefix). Magnet/torrent path unchanged.
+- [x] Confirm `infoHashFromStreamPath` returns null for absolute URLs and the history block is a no-op (existing null-guard handles it). Add a TODO comment that HTTP-stream history is intentionally skipped in v1.
+
+### Adapter fixes (audit-derived)
+
+- [x] `buildMagnetFromStream` — filter `sources[]` tracker URLs to only `udp://`, `http://`, `https://` schemes after stripping `tracker:` prefix. Drop malformed entries silently.
+- [x] `fanOut` — stable secondary sort after `rankTorrent`: HTTP-shape (streamUrl set) results boost above magnet-shape within the same rank bucket.
+- [x] `validateAddon` — check `manifest.idPrefixes`. If present and doesn't include `"tt"`, return `{ ok: true, manifest, warning: "..." }`.
+- [x] `validateAddon` — check `manifest.behaviorHints.configurationRequired`. If true, return `{ ok: true, manifest, warning: "..." }`. Return type widens to include `warning?: string`.
+
+### Settings file hardening
+
+- [x] `services/settings.ts` — after every `writeFile` / `rename` in `persist()`, `fs.chmod(PATH, 0o600)` so credentials in the JSON (TD cookies, proxy URL, Stremio personalised URLs) aren't world-readable on shared-user systems. One-liner with a comment.
+
+### Tests
+
+- [x] `stremio.test.ts` — `buildMagnetFromStream` skips malformed tracker entries.
+- [x] `stremio.test.ts` — HTTP-shape results sort above magnet-shape within the same quality bucket.
+- [x] `stremio.test.ts` — `validateAddon` returns `warning` when manifest has `idPrefixes` lacking `"tt"`.
+- [x] `stremio.test.ts` — `validateAddon` returns `warning` when manifest has `behaviorHints.configurationRequired = true`.
+- [ ] Manual smoke: route a `streamUrl` payload through `/api/torrent/start` and `/api/cast/play` against a non-debrid HTTP URL (e.g. Big Buck Bunny mp4 on a public CDN). Confirm Chromecast plays without webtorrent involvement.
+
+### Phase 7 follow-ups (not in this phase — tracked here for visibility)
+
+- HEVC + Chromecast confirm dialog when user picks a non-castFriendly Stremio HTTP result.
+- URL-expiry error toast in the cast pipeline when an external stream returns 4xx mid-play.
 
 ## Phase 6 — API endpoints (`routes/stremio.ts`)
 

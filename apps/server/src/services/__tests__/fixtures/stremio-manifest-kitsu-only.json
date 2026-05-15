@@ -1,0 +1,9 @@
+{
+  "id": "community.kitsu",
+  "version": "1.0.0",
+  "name": "Kitsu Addon",
+  "resources": ["stream"],
+  "types": ["movie", "series"],
+  "idPrefixes": ["kitsu:"],
+  "catalogs": []
+}

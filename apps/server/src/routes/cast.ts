@@ -61,13 +61,28 @@ export async function castRoutes(app: FastifyInstance) {
         error: "deviceId, streamPath, and title are required",
       });
     }
-    const ip = getLanIp();
-    if (!ip) {
-      return reply.code(500).send({
-        error: "Could not determine LAN IP for stream URL — is the laptop on a network?",
-      });
+
+    // Detect whether streamPath is already an absolute URL (e.g. a debrid CDN link
+    // returned by the Stremio HTTP-stream branch in /api/torrent/start).
+    const isAbsolute = /^https?:\/\//i.test(streamPath);
+
+    // We need a LAN IP only when the stream URL must be constructed from the
+    // relative path, or when a relative subtitle path is being attached.
+    const needsLanIp = !isAbsolute || Boolean(subtitlePath);
+    let ip: string | null = null;
+    if (needsLanIp) {
+      ip = getLanIp();
+      if (!ip) {
+        return reply.code(500).send({
+          error: "Could not determine LAN IP for stream URL — is the laptop on a network?",
+        });
+      }
     }
-    const streamUrl = `http://${ip}:${config.port}${streamPath}`;
+
+    const streamUrl = isAbsolute
+      ? streamPath
+      : `http://${ip!}:${config.port}${streamPath}`;
+
     try {
       const params: PlayParams = {
         deviceId,
@@ -79,7 +94,7 @@ export async function castRoutes(app: FastifyInstance) {
       if (subtitlePath) {
         params.tracks = [
           {
-            url: `http://${ip}:${config.port}${subtitlePath}`,
+            url: `http://${ip!}:${config.port}${subtitlePath}`,
             language: subtitleLanguage ?? "und",
             name: subtitleName ?? "Subtitles",
           },
@@ -87,8 +102,10 @@ export async function castRoutes(app: FastifyInstance) {
       }
       const result = await play(params);
 
+      // TODO(stremio): HTTP-stream history not tracked in v1 — would need synthetic ID
       // Record cast start in history. Removal will update this entry rather
       // than appending a duplicate (see DELETE /api/torrent/:infoHash).
+      // infoHashFromStreamPath returns null for absolute URLs — the if-guard is a no-op.
       const infoHash = infoHashFromStreamPath(streamPath);
       if (infoHash) {
         const m = getMeta(infoHash);

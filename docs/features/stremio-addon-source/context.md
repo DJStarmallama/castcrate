@@ -1,7 +1,7 @@
 # stremio-addon-source — Context
 
 **Last updated:** 2026-05-15
-**Status:** Phases 1 + 2 + 3 + 4 complete; Phases 5–9 pending
+**Status:** Phases 1 + 2 + 3 + 4 + 5 complete; Phases 6–9 pending
 
 ## Implementation notes
 
@@ -16,6 +16,18 @@
 - Movie route now accepts optional `?imdbId` query param. Invalid formats (not matching `/^tt\d{5,}$/`) are logged at `warn` level and treated as absent — the request is not rejected.
 - Episode route already had `imdbId` as a required param (used by EZTV). Stremio is slotted after EZTV episode results and before the Knaben episode fallback. No changes to the existing EZTV/Knaben/TD wiring.
 - `getSettings` imported directly into `routes/torrents.ts` (was not previously imported there) to read `stremioAddons` for the availability check.
+
+### Phase 5 decisions
+- **Direct passthrough chosen (Option A).** HTTP streams from debrid CDNs are passed unchanged to the Chromecast/video element. No server-side proxy or transcode. Rationale: avoids doubling LAN bandwidth; debrid CDNs are CORS- and Chromecast-friendly; transcode from a URL input is deferred work.
+- `POST /api/torrent/start` returns `{ infoHash: null, streamUrl: <absolute>, videoLength: 0, transcodable: false }` for the stremio+streamUrl branch. `setMeta()` is intentionally omitted — no infoHash to key on.
+- `POST /api/cast/play` uses `isAbsolute = /^https?:\/\//i.test(streamPath)` to branch. LAN IP is only resolved when needed (relative path or relative subtitle path). This keeps the 500 guard for local-stream use while being a no-op for external URLs.
+- History tracking is skipped for HTTP-stream casts in v1 — `infoHashFromStreamPath` returns null and the existing `if (infoHash)` guard is a natural no-op. TODO comment added.
+- `buildMagnetFromStream` now validates tracker schemes: only `udp://`, `http://`, `https://` survive after stripping the `tracker:` prefix. `wss://`, bare hosts, etc. are dropped silently.
+- `fanOut` sort is now a two-key comparator: primary is `rankTorrent`, secondary promotes `streamUrl`-having entries over magnet-only within the same rank bucket.
+- `validateAddon` return type widens to `{ ok, manifest?, error?, warning? }`. Two advisory checks: missing `"tt"` in `idPrefixes` and `behaviorHints.configurationRequired === true`. Both can fire simultaneously — joined with `" / "`.
+- `StremioManifest` interface extended with optional `idPrefixes?: string[]` and `behaviorHints?: { configurationRequired?: boolean; [k: string]: unknown }`.
+- `settings.ts` `persist()` now calls `chmod(PATH, 0o600)` after rename. Failure is swallowed silently with a `console.log` warning to handle Windows/non-POSIX filesystems.
+- 12 new tests added to `stremio.test.ts` (Phase 5 buckets). All 190 server tests pass.
 
 ### Phase 1 decisions
 - `sanitise()` in `settings.ts` does whole-array replace for `stremioAddons` — entries with invalid urls or empty ids are filtered out silently, consistent with how other fields are handled.

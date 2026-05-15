@@ -31,6 +31,8 @@ export interface StremioManifest {
   version: string;
   resources: string[];
   types: string[];
+  idPrefixes?: string[];
+  behaviorHints?: { configurationRequired?: boolean; [k: string]: unknown };
 }
 
 export interface StremioStreamResult extends TorrentResult {
@@ -109,6 +111,7 @@ export async function validateAddon(url: string): Promise<{
   ok: boolean;
   manifest?: StremioManifest;
   error?: string;
+  warning?: string;
 }> {
   const base = normaliseAddonBase(url);
   const manifestUrl = `${base}/manifest.json`;
@@ -158,16 +161,36 @@ export async function validateAddon(url: string): Promise<{
     return { ok: false, error: "addon doesn't expose stream resource" };
   }
 
-  return {
-    ok: true,
-    manifest: {
-      id: manifest.id as string,
-      name: manifest.name as string,
-      version: manifest.version as string,
-      resources: resources as string[],
-      types: Array.isArray(manifest.types) ? (manifest.types as string[]) : [],
-    },
+  // Build optional warning strings for non-fatal advisory conditions.
+  const warningParts: string[] = [];
+
+  // If idPrefixes is present and doesn't include "tt", the addon may not handle
+  // IMDb-keyed lookups. Absence of the field means "no constraint" — no warning.
+  if (Array.isArray(manifest.idPrefixes) && !(manifest.idPrefixes as string[]).includes("tt")) {
+    warningParts.push("addon may not support IMDb-keyed (tt…) lookups");
+  }
+
+  // If the addon signals it needs configuration, alert the user to get a personal URL.
+  const behaviorHints = manifest.behaviorHints as { configurationRequired?: boolean } | undefined;
+  if (behaviorHints?.configurationRequired === true) {
+    warningParts.push(
+      "addon requires configuration — visit the addon’s setup page to get a personalised URL",
+    );
+  }
+
+  const warning = warningParts.length > 0 ? warningParts.join(" / ") : undefined;
+
+  const parsedManifest: StremioManifest = {
+    id: manifest.id as string,
+    name: manifest.name as string,
+    version: manifest.version as string,
+    resources: resources as string[],
+    types: Array.isArray(manifest.types) ? (manifest.types as string[]) : [],
+    ...(Array.isArray(manifest.idPrefixes) ? { idPrefixes: manifest.idPrefixes as string[] } : {}),
+    ...(manifest.behaviorHints !== undefined ? { behaviorHints: manifest.behaviorHints as StremioManifest["behaviorHints"] } : {}),
   };
+
+  return { ok: true, manifest: parsedManifest, ...(warning !== undefined ? { warning } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -175,16 +198,22 @@ export async function validateAddon(url: string): Promise<{
 // ---------------------------------------------------------------------------
 
 function buildMagnetFromStream(infoHash: string, title: string, sources?: string[]): string {
-  // Extract tracker URLs from sources[] that start with "tracker:"
+  // Extract tracker URLs from sources[] that start with "tracker:".
+  // Only keep entries whose URL, after stripping the "tracker:" prefix,
+  // starts with a well-known scheme. Malformed entries are dropped silently.
+  const VALID_TRACKER_SCHEMES = ["udp://", "http://", "https://"];
   const trackers: string[] = [];
   if (sources && sources.length > 0) {
     for (const s of sources) {
       if (s.startsWith("tracker:")) {
-        trackers.push(s.slice("tracker:".length));
+        const trackerUrl = s.slice("tracker:".length);
+        if (VALID_TRACKER_SCHEMES.some((scheme) => trackerUrl.startsWith(scheme))) {
+          trackers.push(trackerUrl);
+        }
       }
     }
   }
-  // Fall back to hardcoded list if none found
+  // Fall back to hardcoded list if none passed scheme validation
   const trackerList = trackers.length > 0 ? trackers : FALLBACK_TRACKERS;
   const trParams = trackerList.map((t) => `&tr=${encodeURIComponent(t)}`).join("");
   return `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(title)}${trParams}`;
@@ -366,7 +395,15 @@ async function fanOut(
   }
 
   const deduped = dedupeResults(allResults);
-  deduped.sort(rankTorrent);
+  // Primary sort by quality rank; secondary stable boost for HTTP-shape (streamUrl set)
+  // over magnet-shape within the same rank bucket — instant CDN streams rank above P2P.
+  deduped.sort((a, b) => {
+    const primary = rankTorrent(a, b);
+    if (primary !== 0) return primary;
+    if (a.streamUrl && !b.streamUrl) return -1;
+    if (b.streamUrl && !a.streamUrl) return 1;
+    return 0;
+  });
 
   cache.set(cacheKey, deduped);
   return { results: deduped, errors };
