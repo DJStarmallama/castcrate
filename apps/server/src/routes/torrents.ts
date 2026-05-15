@@ -397,6 +397,11 @@ export async function torrentRoutes(app: FastifyInstance) {
       const stream = range
         ? file.createReadStream({ start: range.start, end: range.end })
         : file.createReadStream();
+      stream.on("error", (err: Error) => {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "EPIPE" || code === "ERR_STREAM_PREMATURE_CLOSE") return;
+        req.log.warn({ err }, "file stream error");
+      });
 
       // Wait for the first byte before responding so we can return 504
       // when WebTorrent has no peers and the bytes never arrive — instead
@@ -446,7 +451,17 @@ export async function torrentRoutes(app: FastifyInstance) {
       }
 
       const source = file.createReadStream();
+      source.on("error", (err: Error) => {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "EPIPE" || code === "ERR_STREAM_PREMATURE_CLOSE") return;
+        req.log.warn({ err }, "transcode source stream error");
+      });
       const handle = spawnTranscode(source);
+      handle.stdout.on("error", (err: Error) => {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "EPIPE" || code === "ERR_STREAM_PREMATURE_CLOSE") return;
+        req.log.warn({ err }, "transcode stdout stream error");
+      });
 
       let stderrBuf = "";
       handle.process.stderr.on("data", (chunk: Buffer) => {

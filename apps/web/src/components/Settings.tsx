@@ -252,27 +252,30 @@ export function Settings({ onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-8 shadow-2xl"
+        className="flex w-full max-w-lg max-h-[90vh] flex-col rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between">
-          <h2 className="text-2xl font-semibold">Settings</h2>
-          <button
-            onClick={onClose}
-            className="rounded-full bg-zinc-900 p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-            aria-label="Close"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
+        <div className="flex-shrink-0 border-b border-zinc-800 px-8 pt-8 pb-4">
+          <div className="flex items-start justify-between">
+            <h2 className="text-2xl font-semibold">Settings</h2>
+            <button
+              onClick={onClose}
+              className="rounded-full bg-zinc-900 p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+              aria-label="Close"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <p className="mt-2 text-sm text-zinc-500">
+            Defaults come from <code>.env</code>. Edits below persist to{" "}
+            <code>~/.castcrate/settings.json</code> and apply at runtime.
+          </p>
         </div>
 
-        <p className="mt-2 text-sm text-zinc-500">
-          Defaults come from <code>.env</code>. Edits below persist to{" "}
-          <code>~/.castcrate/settings.json</code> and apply at runtime.
-        </p>
-
+        <div className="overflow-y-auto px-8 py-6">
         {sys.isPending && <p className="mt-6 text-zinc-500">Loading…</p>}
         {sys.data && (
           <>
@@ -690,6 +693,7 @@ export function Settings({ onClose }: Props) {
             <li>The server binds to <code>0.0.0.0:3000</code> so Chromecasts on the LAN can reach the stream.</li>
             <li>YTS / EZTV rotate domains. Override <code>YTS_BASE_URL</code> / <code>EZTV_BASE_URL</code> in <code>.env</code> if a default stops responding.</li>
           </ul>
+        </div>
         </div>
       </div>
     </div>
