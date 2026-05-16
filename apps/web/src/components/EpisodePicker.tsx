@@ -198,13 +198,21 @@ function TorrentRow({
   highlight?: boolean;
   onPick: () => void;
 }) {
+  const isStremio = torrent.source === "stremio";
+  const isInstant = isStremio && Boolean(torrent.streamUrl);
+  const sizeText = torrent.sizeBytes > 0 ? formatBytes(torrent.sizeBytes) : "size unknown";
+  const swarmText = isStremio
+    ? `via ${torrent.addonOrigin ?? "Stremio"} · seeds unknown`
+    : `${torrent.seeds} seeds · ${torrent.peers} peers`;
   return (
     <button
       onClick={onPick}
       className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition ${
-        highlight
-          ? "border-emerald-700/40 bg-emerald-950/20 hover:border-emerald-500/60"
-          : "border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 hover:bg-zinc-900"
+        isInstant
+          ? "border-amber-500/40 bg-amber-950/10 hover:border-amber-400/60"
+          : highlight
+            ? "border-emerald-700/40 bg-emerald-950/20 hover:border-emerald-500/60"
+            : "border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 hover:bg-zinc-900"
       }`}
     >
       <div className="min-w-0 flex-1">
@@ -212,6 +220,14 @@ function TorrentRow({
           <span>{torrent.resolution}</span>
           <span className="text-zinc-500">·</span>
           <span>{torrent.videoCodec}</span>
+          {isInstant && (
+            <span
+              className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-medium text-amber-300"
+              title="Real-Debrid cached — plays instantly, no peer wait"
+            >
+              ⚡ Instant
+            </span>
+          )}
           {!torrent.castFriendly && (
             <span
               className="rounded-full bg-amber-900/40 px-2 py-0.5 text-[10px] uppercase tracking-wider text-amber-300"
@@ -222,13 +238,17 @@ function TorrentRow({
           )}
         </div>
         <div className="text-xs text-zinc-500">
-          {formatBytes(torrent.sizeBytes)} · {torrent.seeds} seeds · {torrent.peers} peers
+          {sizeText} · {swarmText}
         </div>
         <div className="truncate text-xs text-zinc-600">{torrent.title}</div>
       </div>
       <span
         className={`ml-3 flex-shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
-          highlight ? "bg-emerald-500 text-black" : "bg-zinc-800 text-zinc-300"
+          isInstant
+            ? "bg-amber-500 text-black"
+            : highlight
+              ? "bg-emerald-500 text-black"
+              : "bg-zinc-800 text-zinc-300"
         }`}
       >
         Cast
