@@ -40,11 +40,23 @@ export function Player({ movie, session, onClose }: Props) {
   // produce a nonsense URL pointing at the CDN.
   const playUrl = useTranscode ? `${session.streamUrl}/transcoded` : session.streamUrl;
 
+  // Track whether the video element has reported it can play smoothly.
+  // While not yet playing, poll fast so the buffer % updates feel live;
+  // once playing, back off so we don't hammer the server.
+  const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
+  const [videoBuffering, setVideoBuffering] = useState(false);
+
   const status = useQuery({
     queryKey: ["torrent-status", session.infoHash],
     // infoHash is non-null for torrent sessions; query is disabled for HTTP streams.
     queryFn: () => api.torrentStatus(session.infoHash!),
-    refetchInterval: (q) => (q.state.data?.done ? false : 10_000),
+    refetchInterval: (q) => {
+      if (q.state.data?.done) return false;
+      // Fast polling during early buffering or when the video element is
+      // currently waiting for data; slower once playback is stable.
+      if (!hasPlayedOnce || videoBuffering) return 1500;
+      return 10_000;
+    },
     enabled: !closing && !isHttpStream,
   });
 
@@ -110,6 +122,28 @@ export function Player({ movie, session, onClose }: Props) {
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
+
+  // Track the local <video> element's playback readiness so we can show
+  // a buffering overlay during the initial peer-warmup phase and whenever
+  // the browser exhausts its buffer mid-play.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onPlaying = () => {
+      setVideoBuffering(false);
+      setHasPlayedOnce(true);
+    };
+    const onWaiting = () => setVideoBuffering(true);
+    const onCanPlay = () => setVideoBuffering(false);
+    v.addEventListener("playing", onPlaying);
+    v.addEventListener("waiting", onWaiting);
+    v.addEventListener("canplay", onCanPlay);
+    return () => {
+      v.removeEventListener("playing", onPlaying);
+      v.removeEventListener("waiting", onWaiting);
+      v.removeEventListener("canplay", onCanPlay);
+    };
+  }, [playUrl]);
 
   // 'F' shortcut toggles fullscreen
   useEffect(() => {
@@ -219,7 +253,7 @@ export function Player({ movie, session, onClose }: Props) {
           Stop & close
         </button>
       </header>
-      <div className="flex flex-1 items-center justify-center bg-black">
+      <div className="relative flex flex-1 items-center justify-center bg-black">
         {isCasting ? (
           <CastControls
             movie={movie}
@@ -228,27 +262,38 @@ export function Player({ movie, session, onClose }: Props) {
             disableSeek={useTranscode}
           />
         ) : (
-          <video
-            ref={videoRef}
-            // Force a fresh element when the subtitle track or selected
-            // video file changes — <video> caches text tracks aggressively
-            // and won't re-fetch a new src on its own.
-            key={`${session.infoHash ?? "http"}-${selectedFileIndex ?? "auto"}-${subtitle?.index ?? "none"}`}
-            src={playUrl}
-            controls
-            autoPlay
-            crossOrigin="anonymous"
-            className="h-full max-h-full w-full max-w-full"
-          >
-            {subtitle && session.infoHash && (
-              <track
-                kind="subtitles"
-                src={`/stream/${session.infoHash}/subtitles/${subtitle.index}`}
-                label={subtitle.language}
-                default
+          <>
+            <video
+              ref={videoRef}
+              // Force a fresh element when the subtitle track or selected
+              // video file changes — <video> caches text tracks aggressively
+              // and won't re-fetch a new src on its own.
+              key={`${session.infoHash ?? "http"}-${selectedFileIndex ?? "auto"}-${subtitle?.index ?? "none"}`}
+              src={playUrl}
+              controls
+              autoPlay
+              crossOrigin="anonymous"
+              className="h-full max-h-full w-full max-w-full"
+            >
+              {subtitle && session.infoHash && (
+                <track
+                  kind="subtitles"
+                  src={`/stream/${session.infoHash}/subtitles/${subtitle.index}`}
+                  label={subtitle.language}
+                  default
+                />
+              )}
+            </video>
+            {!isHttpStream && (videoBuffering || !hasPlayedOnce) && status.data && !status.data.done && (
+              <BufferingOverlay
+                progress={status.data.progress}
+                speed={status.data.downloadSpeed}
+                peers={status.data.numPeers}
+                stalled={stalled}
+                initial={!hasPlayedOnce}
               />
             )}
-          </video>
+          </>
         )}
       </div>
       <footer className="border-t border-zinc-900 bg-zinc-950 px-6 py-3">
@@ -304,6 +349,57 @@ function ProgressBar({
           }`}
           style={{ width: `${Math.max(2, progress * 100)}%` }}
         />
+      </div>
+    </div>
+  );
+}
+
+function BufferingOverlay({
+  progress,
+  speed,
+  peers,
+  stalled,
+  initial,
+}: {
+  progress: number;
+  speed: number;
+  peers: number;
+  stalled: boolean;
+  initial: boolean;
+}) {
+  const pct = Math.round(progress * 100 * 10) / 10;
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55 backdrop-blur-sm">
+      <div className="pointer-events-auto flex w-full max-w-md flex-col items-center gap-4 rounded-2xl border border-zinc-800 bg-zinc-950/90 p-6 text-center shadow-2xl">
+        <div className="flex items-center gap-3">
+          {!stalled && (
+            <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-emerald-400" />
+          )}
+          <span className="text-base font-medium">
+            {stalled
+              ? "Waiting for peers…"
+              : initial
+                ? "Buffering…"
+                : "Buffering — waiting for more data"}
+          </span>
+        </div>
+        <div className="w-full">
+          <div className="flex justify-between text-xs text-zinc-400">
+            <span>{pct}% downloaded</span>
+            <span>{formatBitsPerSec(speed)}</span>
+          </div>
+          <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-zinc-900">
+            <div
+              className={`h-full ${stalled ? "bg-amber-500" : "bg-emerald-400"}`}
+              style={{ width: `${Math.max(2, pct)}%` }}
+            />
+          </div>
+        </div>
+        <p className="text-xs text-zinc-500">
+          {peers === 0
+            ? "No peers connected yet — this can take a moment for older releases."
+            : `Connected to ${peers} peer${peers === 1 ? "" : "s"}.`}
+        </p>
       </div>
     </div>
   );
