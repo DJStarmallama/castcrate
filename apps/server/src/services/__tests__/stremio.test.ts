@@ -655,6 +655,41 @@ describe("stremio adapter", () => {
     });
   });
 
+  describe("Torrentio downloading-placeholder filter", () => {
+    it("drops streams whose url is the Torrentio downloading_v2.mp4 placeholder", async () => {
+      mockSettings([
+        { id: "f1", url: "https://torrentio.strem.fun", name: "Torrentio", enabled: true },
+      ]);
+      _clearCache();
+
+      const placeholderResponse = {
+        streams: [
+          {
+            name: "Torrentio RD download",
+            title: "Some.Movie.2024.1080p",
+            url: "https://torrentio.strem.fun/videos/downloading_v2.mp4",
+          },
+          {
+            name: "Torrentio RD",
+            title: "Some.Movie.2024.1080p",
+            url: "https://download.real-debrid.com/d/abc/movie.mkv",
+          },
+        ],
+      };
+
+      vi.stubGlobal("fetch", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => placeholderResponse,
+      }));
+
+      const { results } = await searchStremioMovie("tt9000099");
+
+      expect(results).toHaveLength(1);
+      expect(results[0]!.streamUrl).toContain("real-debrid.com");
+    });
+  });
+
   describe("HTTP-shape sort boost within same rank bucket (Phase 5b)", () => {
     it("places streamUrl result above magnet-only result of identical title/resolution", async () => {
       mockSettings([

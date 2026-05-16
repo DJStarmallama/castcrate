@@ -266,6 +266,15 @@ function toResult(stream: RawStream, addonOrigin: string): StremioStreamResult |
   };
 
   if (stream.url) {
+    // Torrentio (and similar debrid-aware addons) returns a placeholder video
+    // — `https://torrentio.strem.fun/videos/downloading_v2.mp4` — when the
+    // torrent ISN'T actually cached on Real-Debrid yet. The addon kicks off
+    // a background RD download and returns this 1MB stub in the meantime.
+    // These results would mislead the user with an "⚡ Instant" badge that
+    // plays a 5-second "downloading…" clip. Drop them at parse time.
+    if (/\/videos\/downloading[^/]*\.(mp4|mkv|webm)$/i.test(stream.url)) {
+      return null;
+    }
     // HTTP stream shape — bypass webtorrent
     return {
       ...base,
