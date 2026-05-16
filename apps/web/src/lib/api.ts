@@ -106,6 +106,14 @@ export interface StremioAddon {
   enabled: boolean;
 }
 
+/** Per-source enable flags. TorrentDay has its own torrentDay.enabled;
+ *  Stremio is per-addon. These three default to true on the server. */
+export interface SourceEnabled {
+  yts: boolean;
+  eztv: boolean;
+  knaben: boolean;
+}
+
 export interface RuntimeSettings {
   bufferPercent: number;
   transcodeBufferPercent: number;
@@ -114,6 +122,7 @@ export interface RuntimeSettings {
   proxyEnabled: ProxyEnabled;
   torrentDay: TorrentDaySettings;
   stremioAddons: StremioAddon[];
+  sourceEnabled: SourceEnabled;
 }
 
 export interface TorrentDayTestResult {

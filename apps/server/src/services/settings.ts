@@ -16,6 +16,15 @@ export interface ProxyEnabled {
   stremio: boolean;
 }
 
+/** Per-source enable flags for the public indexers. TorrentDay has its own
+ *  `torrentDay.enabled` flag; Stremio is per-addon. These three default to
+ *  true (existing behaviour) — users can disable them individually. */
+export interface SourceEnabled {
+  yts: boolean;
+  eztv: boolean;
+  knaben: boolean;
+}
+
 export interface StremioAddon {
   id: string;
   url: string;
@@ -42,6 +51,8 @@ export interface RuntimeSettings {
   torrentDay: TorrentDaySettings;
   /** Stremio addon manifest URLs + metadata. */
   stremioAddons: StremioAddon[];
+  /** Per-source enable flags for YTS / EZTV / Knaben. Default: all true. */
+  sourceEnabled: SourceEnabled;
 }
 
 const ALLOWED_KEYS: ReadonlyArray<keyof RuntimeSettings> = [
@@ -52,6 +63,7 @@ const ALLOWED_KEYS: ReadonlyArray<keyof RuntimeSettings> = [
   "proxyEnabled",
   "torrentDay",
   "stremioAddons",
+  "sourceEnabled",
 ];
 
 const PROXY_URL_RE = /^(socks5h?|http|https):\/\/.+/;
@@ -68,6 +80,12 @@ const TORRENT_DAY_DEFAULTS: TorrentDaySettings = {
   enabled: false,
   uid: null,
   pass: null,
+};
+
+const SOURCE_ENABLED_DEFAULTS: SourceEnabled = {
+  yts: true,
+  eztv: true,
+  knaben: true,
 };
 
 let overrides: Partial<RuntimeSettings> = {};
@@ -133,6 +151,9 @@ export function getSettings(): RuntimeSettings {
       ? { ...TORRENT_DAY_DEFAULTS, ...overrides.torrentDay }
       : { ...TORRENT_DAY_DEFAULTS },
     stremioAddons: overrides.stremioAddons ?? [],
+    sourceEnabled: overrides.sourceEnabled
+      ? { ...SOURCE_ENABLED_DEFAULTS, ...overrides.sourceEnabled }
+      : { ...SOURCE_ENABLED_DEFAULTS },
   };
 }
 
@@ -186,9 +207,17 @@ export async function updateSettings(
           next.stremioAddons = sanitised.stremioAddons;
         }
       }
+    } else if (k === "sourceEnabled") {
+      if (partial.sourceEnabled !== undefined && sanitised.sourceEnabled !== undefined) {
+        next.sourceEnabled = {
+          ...SOURCE_ENABLED_DEFAULTS,
+          ...overrides.sourceEnabled,
+          ...sanitised.sourceEnabled,
+        };
+      }
     } else {
       // Regular scalar keys
-      const key = k as Exclude<keyof RuntimeSettings, "proxyUrl" | "proxyEnabled" | "torrentDay" | "stremioAddons">;
+      const key = k as Exclude<keyof RuntimeSettings, "proxyUrl" | "proxyEnabled" | "torrentDay" | "stremioAddons" | "sourceEnabled">;
       if (partial[key] === null || partial[key] === undefined) {
         delete next[key];
       } else if (sanitised[key] !== undefined) {
@@ -250,6 +279,18 @@ function sanitise(input: Partial<RuntimeSettings>): Partial<RuntimeSettings> {
     }
     if (Object.keys(sanitisedPe).length > 0) {
       out.proxyEnabled = sanitisedPe as ProxyEnabled;
+    }
+  }
+
+  // sourceEnabled: partial-merge booleans, same pattern as proxyEnabled.
+  if (input.sourceEnabled !== null && typeof input.sourceEnabled === "object") {
+    const se = input.sourceEnabled as unknown as Record<string, unknown>;
+    const sanitisedSe: Partial<SourceEnabled> = {};
+    for (const key of Object.keys(SOURCE_ENABLED_DEFAULTS) as Array<keyof SourceEnabled>) {
+      if (key in se) sanitisedSe[key] = Boolean(se[key]);
+    }
+    if (Object.keys(sanitisedSe).length > 0) {
+      out.sourceEnabled = sanitisedSe as SourceEnabled;
     }
   }
 

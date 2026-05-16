@@ -102,11 +102,15 @@ export async function torrentRoutes(app: FastifyInstance) {
       const tried: string[] = [];
       const errors: Array<string | { source: string; code: string; addonId?: string; addonName?: string }> = [];
       let results: TorrentResult[] = [];
-      try {
-        tried.push("yts");
-        results = await searchTorrents(title, year);
-      } catch (err) {
-        errors.push(`yts: ${(err as Error).message}`);
+      const settings = getSettings();
+
+      if (settings.sourceEnabled.yts) {
+        try {
+          tried.push("yts");
+          results = await searchTorrents(title, year);
+        } catch (err) {
+          errors.push(`yts: ${(err as Error).message}`);
+        }
       }
 
       // Stremio — slot between YTS and Knaben; only when imdbId is present and
@@ -114,7 +118,7 @@ export async function torrentRoutes(app: FastifyInstance) {
       if (results.length === 0) {
         const stremioEnabled =
           imdbId !== undefined &&
-          getSettings().stremioAddons.some((a) => a.enabled);
+          settings.stremioAddons.some((a) => a.enabled);
 
         if (stremioEnabled && imdbId) {
           tried.push("stremio");
@@ -128,7 +132,7 @@ export async function torrentRoutes(app: FastifyInstance) {
         }
       }
 
-      if (results.length === 0) {
+      if (results.length === 0 && settings.sourceEnabled.knaben) {
         try {
           tried.push("knaben");
           results = await searchKnabenMovie(title, year);
@@ -176,20 +180,23 @@ export async function torrentRoutes(app: FastifyInstance) {
     const errors: Array<string | { source: string; code: string; addonId?: string; addonName?: string }> = [];
     let episodeResults: TorrentResult[] = [];
     let packResults: TorrentResult[] = [];
+    const settings = getSettings();
 
-    try {
-      tried.push("eztv");
-      [episodeResults, packResults] = await Promise.all([
-        searchEpisode(imdbId, season, episode),
-        searchSeasonPack(imdbId, season),
-      ]);
-    } catch (err) {
-      errors.push(`eztv: ${(err as Error).message}`);
+    if (settings.sourceEnabled.eztv) {
+      try {
+        tried.push("eztv");
+        [episodeResults, packResults] = await Promise.all([
+          searchEpisode(imdbId, season, episode),
+          searchSeasonPack(imdbId, season),
+        ]);
+      } catch (err) {
+        errors.push(`eztv: ${(err as Error).message}`);
+      }
     }
 
     // Stremio — slot between EZTV and Knaben for episode results.
     if (episodeResults.length === 0) {
-      const stremioEnabled = getSettings().stremioAddons.some((a) => a.enabled);
+      const stremioEnabled = settings.stremioAddons.some((a) => a.enabled);
       if (stremioEnabled) {
         if (!tried.includes("stremio")) tried.push("stremio");
         const outcome = await searchStremioEpisode(imdbId, season, episode);
@@ -202,7 +209,7 @@ export async function torrentRoutes(app: FastifyInstance) {
       }
     }
 
-    if (episodeResults.length === 0 && title) {
+    if (episodeResults.length === 0 && title && settings.sourceEnabled.knaben) {
       if (!tried.includes("knaben")) tried.push("knaben");
       try {
         episodeResults = await searchKnabenEpisode(title, season, episode);
@@ -211,7 +218,7 @@ export async function torrentRoutes(app: FastifyInstance) {
       }
     }
 
-    if (packResults.length === 0 && title) {
+    if (packResults.length === 0 && title && settings.sourceEnabled.knaben) {
       if (!tried.includes("knaben")) tried.push("knaben");
       try {
         packResults = await searchKnabenSeasonPack(title, season);

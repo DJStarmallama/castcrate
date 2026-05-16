@@ -47,6 +47,13 @@ export function Settings({ onClose }: Props) {
     Partial<Record<ProxyProvider, ProxyTestResult | "loading">>
   >({});
 
+  // Public-indexer enable toggles (defaults true on server)
+  const [sourceEnabled, setSourceEnabled] = useState<{
+    yts: boolean;
+    eztv: boolean;
+    knaben: boolean;
+  }>({ yts: true, eztv: true, knaben: true });
+
   // Stremio addon state
   const [stremioAddons, setStremioAddons] = useState<StremioAddon[]>([]);
   const [stremioUrlInput, setStremioUrlInput] = useState("");
@@ -95,6 +102,12 @@ export function Settings({ onClose }: Props) {
     });
     // Reset test results when settings load/change
     setProxyTestResults({});
+    // Public indexers
+    setSourceEnabled({
+      yts: settings.data.sourceEnabled?.yts ?? true,
+      eztv: settings.data.sourceEnabled?.eztv ?? true,
+      knaben: settings.data.sourceEnabled?.knaben ?? true,
+    });
     // Stremio addons
     setStremioAddons(settings.data.stremioAddons ?? []);
     stremioAddonsVersion.current += 1;
@@ -226,6 +239,11 @@ export function Settings({ onClose }: Props) {
     save.mutate({ torrentDay: { pass: trimmed } });
     setTdPassEditing(false);
     setTdTestResult(null);
+  };
+
+  const saveSourceEnabled = (source: "yts" | "eztv" | "knaben", checked: boolean) => {
+    save.mutate({ sourceEnabled: { ...sourceEnabled, [source]: checked } });
+    setSourceEnabled((prev) => ({ ...prev, [source]: checked }));
   };
 
   const saveTdEnabled = (checked: boolean) => {
@@ -582,6 +600,42 @@ export function Settings({ onClose }: Props) {
                     </span>
                   )}
                 </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Public indexers section — enable/disable YTS, EZTV, Knaben */}
+        <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+          <p className="text-sm font-medium text-zinc-200">Public indexers</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Toggle which public sources cratebuddy queries. All on by default.
+            TorrentDay and Stremio addons are configured separately below.
+          </p>
+          <div className="mt-3 space-y-2">
+            {(["yts", "eztv", "knaben"] as const).map((src) => {
+              const labels: Record<typeof src, { name: string; hint: string }> = {
+                yts: { name: "YTS", hint: "movies — primary source, fastest for popular titles" },
+                eztv: { name: "EZTV", hint: "TV episodes + season packs, IMDb-keyed" },
+                knaben: { name: "Knaben", hint: "free-text aggregator, fallback when others empty" },
+              };
+              const label = labels[src];
+              return (
+                <label
+                  key={src}
+                  className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/30 px-3 py-2 hover:border-zinc-700"
+                >
+                  <input
+                    type="checkbox"
+                    checked={sourceEnabled[src]}
+                    onChange={(e) => saveSourceEnabled(src, e.target.checked)}
+                    className="mt-1 accent-emerald-500"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-zinc-200">{label.name}</p>
+                    <p className="text-xs text-zinc-500">{label.hint}</p>
+                  </div>
+                </label>
               );
             })}
           </div>

@@ -4,6 +4,9 @@ import type { MovieDetails, TorrentResult } from "@castcrate/shared";
 import { api } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import { useEscape } from "../hooks/useEscape";
+import { useLocalState } from "../hooks/useLocalState";
+
+const INSTANT_ONLY_KEY = "castcrate.instantOnly";
 
 interface Props {
   movie: MovieDetails;
@@ -13,6 +16,7 @@ interface Props {
 
 export function TorrentPicker({ movie, onClose, onPick }: Props) {
   const [showAll, setShowAll] = useState(false);
+  const [instantOnly, setInstantOnly] = useLocalState(INSTANT_ONLY_KEY, false);
   useEscape(onClose);
 
   const q = useQuery({
@@ -20,6 +24,13 @@ export function TorrentPicker({ movie, onClose, onPick }: Props) {
     queryFn: () =>
       api.searchTorrents(movie.title, movie.year ?? undefined, movie.imdbId),
   });
+
+  const filteredResults = q.data
+    ? instantOnly
+      ? q.data.results.filter((r) => Boolean(r.streamUrl))
+      : q.data.results
+    : [];
+  const instantCount = q.data?.results.filter((r) => Boolean(r.streamUrl)).length ?? 0;
 
   return (
     <div
@@ -40,10 +51,26 @@ export function TorrentPicker({ movie, onClose, onPick }: Props) {
           </svg>
         </button>
 
-        <h2 className="text-xl font-semibold">Find sources</h2>
-        <p className="text-sm text-zinc-500">
-          {movie.title} {movie.year ? `(${movie.year})` : ""}
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold">Find sources</h2>
+            <p className="text-sm text-zinc-500">
+              {movie.title} {movie.year ? `(${movie.year})` : ""}
+            </p>
+          </div>
+          <label
+            className="flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-3 py-1.5 text-xs text-zinc-300 hover:border-amber-500/40"
+            title="Show only Real-Debrid cached results that play instantly"
+          >
+            <input
+              type="checkbox"
+              checked={instantOnly}
+              onChange={(e) => setInstantOnly(e.target.checked)}
+              className="accent-amber-400"
+            />
+            <span>⚡ Instant only</span>
+          </label>
+        </div>
 
         <div className="mt-6">
           {q.isPending && <p className="text-zinc-500">Searching torrents…</p>}
@@ -61,13 +88,27 @@ export function TorrentPicker({ movie, onClose, onPick }: Props) {
               {" "}for this title.
             </p>
           )}
-          {q.data && q.data.results.length > 0 && (
-            <TorrentList
-              results={q.data.results}
-              showAll={showAll}
-              onShowAll={() => setShowAll(true)}
-              onPick={onPick}
-            />
+          {q.data && q.data.results.length > 0 && filteredResults.length === 0 && instantOnly && (
+            <div className="rounded-lg border border-amber-700/40 bg-amber-950/20 p-4 text-sm text-amber-200">
+              No ⚡ Instant streams for this title. {q.data.results.length} torrent
+              {q.data.results.length === 1 ? "" : "s"} hidden by the filter — uncheck "Instant only" to see them.
+            </div>
+          )}
+          {filteredResults.length > 0 && (
+            <>
+              {instantOnly && (
+                <p className="mb-3 text-xs text-amber-400/80">
+                  Showing {instantCount} instant result{instantCount === 1 ? "" : "s"}.
+                  Filter is on — uncheck "Instant only" to see torrent magnets too.
+                </p>
+              )}
+              <TorrentList
+                results={filteredResults}
+                showAll={showAll}
+                onShowAll={() => setShowAll(true)}
+                onPick={onPick}
+              />
+            </>
           )}
         </div>
       </div>
