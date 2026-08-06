@@ -83,7 +83,7 @@ Cross-feature tech debt and review findings. **Populated and updated by `/review
 
 ## Master Overview Rollup
 
-- **Rollup status:** In Progress (1/17 features complete, ~48% weighted task completion)
+- **Rollup status:** In Progress (1/17 features complete — hardening; 260/416 tasks ≈ 63%)
 - **One-line summary for master:** Self-hosted cast/stream box — discovery, torrent sources, playback pipeline, and Chromecast output, currently structured as one umbrella epic.
 
 ---
