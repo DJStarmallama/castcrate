@@ -8,3 +8,9 @@ dist
 .cache
 coverage
 .claude/settings.local.json
+
+# Beast Mode - Session tracking
+.claude/session-edits.json
+
+# Beast Mode - Backups
+.claude/.beast-mode-backup-*/
