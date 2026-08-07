@@ -2,7 +2,7 @@
 
 **Epic:** castcrate
 **Status:** 🟡 In Progress
-**Last Updated:** 2026-08-06 11:27
+**Last Updated:** 2026-08-07
 
 > **This file is the epic marker.** Its presence in `docs/features/castcrate/` tells every Beast Mode command that this folder is an **epic**, not a plain feature. Castcrate is currently organised as a single umbrella epic containing every feature in the project — see Purpose for the rationale (and non-rationale) of that choice.
 
@@ -42,6 +42,8 @@ The full set of features that make up castcrate. Grouped by theme for readabilit
 | — | **Casting** | | | |
 | 16 | chromecast | 🟡 In Progress | 10/18 (56%) | Chromecast device discovery & session |
 | 17 | cast-controls | 🟡 In Progress | 15/25 (60%) | Play/pause/seek/volume for active cast |
+| — | **Ops** | | | |
+| 18 | media-mac-deploy | 🟡 In Progress | 0/47 (0%) | Runbook — deploy CastCrate onto the dedicated 2011 MBP media box (Ubuntu 26.04) |
 
 > Reference any feature with `castcrate/<feature-name>` (e.g. `/proceed castcrate/stremio-addon-source`, `/continue-feature castcrate/hardening`). Bare names still resolve via fuzzy fallback (e.g. `/continue-feature discovery` → `castcrate/discovery`). Task counts are pulled from each feature's `tasks.md` and refreshed by `/update-epic`.
 
@@ -56,6 +58,7 @@ Most features are already in progress or complete and were built independently b
 3. **yts-streaming / knaben-fallback / torrentday-indexer / stremio-addon-source** — torrent sources feeding into playback.
 4. **proxy-routing / transcoding / subtitles / player-buffer-ux** — the streaming pipeline.
 5. **chromecast / cast-controls** — final output to the TV.
+6. **media-mac-deploy** — one-off runbook to deploy the epic onto dedicated hardware; runs independent of code progress and can be executed once code is casting cleanly.
 
 **Dependencies between features:**
 - Torrent sources (8–11) all feed into `proxy-routing` (12).
@@ -83,8 +86,8 @@ Cross-feature tech debt and review findings. **Populated and updated by `/review
 
 ## Master Overview Rollup
 
-- **Rollup status:** In Progress (1/17 features complete — hardening; 260/416 tasks ≈ 63%)
-- **One-line summary for master:** Self-hosted cast/stream box — discovery, torrent sources, playback pipeline, and Chromecast output, currently structured as one umbrella epic.
+- **Rollup status:** In Progress (1/18 features complete — hardening; 260/463 tasks ≈ 56%)
+- **One-line summary for master:** Self-hosted cast/stream box — discovery, torrent sources, playback pipeline, Chromecast output, and dedicated-hardware deploy runbook, currently structured as one umbrella epic.
 
 ---
 

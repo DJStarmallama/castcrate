@@ -1,7 +1,7 @@
 # CastCrate - Master Overview
 
-**Last Updated:** 2026-08-06
-**Version:** v1.0
+**Last Updated:** 2026-08-07
+**Version:** v1.1
 
 ## Project Summary
 
@@ -13,7 +13,7 @@ All product features currently live inside the **castcrate** umbrella epic (`doc
 
 | Feature | Status | Tasks | Notes |
 |---------|--------|-------|-------|
-| **castcrate** (epic, 17 features) | 🟡 In Progress | 260/416 (63%) | Self-hosted cast/stream box — discovery, torrent sources, playback pipeline, and Chromecast output; 1 feature complete (hardening), 14 in progress, 2 requirements-only (discovery, dev-ops). |
+| **castcrate** (epic, 18 features) | 🟡 In Progress | 260/463 (56%) | Self-hosted cast/stream box — discovery, torrent sources, playback pipeline, Chromecast output, plus dedicated-hardware deploy runbook; 1 feature complete (hardening), 15 in progress, 2 requirements-only (discovery, dev-ops). |
 
 ## Integration Points
 
@@ -24,4 +24,5 @@ All product features currently live inside the **castcrate** umbrella epic (`doc
 
 ## Changelog
 
+- v1.1 (2026-08-07): **Added `media-mac-deploy` runbook feature** — 7-phase, 47-task runbook to deploy CastCrate onto a dedicated Early-2011 MacBook Pro 13" running Ubuntu Server 26.04. Epic now 18 features (260/463 tasks, 56%).
 - v1.0 (2026-08-06): **Initial master overview** — Created with a single `castcrate` epic row after rolling all 17 pre-existing features under `docs/features/castcrate/`. Rollup: 260/416 tasks (63%), 1 feature complete (hardening).
