@@ -6,7 +6,26 @@ Running notes / decisions / surprises from executing the runbook. Grow this as t
 
 ## Session log
 
-_(empty — nothing done yet. Format below.)_
+### 2026-08-07 — Phase 1 started
+
+- Runbook feature scaffolded, committed (`4d04ad0`), pushed.
+- Phase 1 kicked off; nothing physical done yet.
+
+### 2026-08-07 — Phase 1 complete ✅
+
+- Ubuntu 26.04 ISO written to a 64 GB USB stick (`/dev/rdisk5`) — clean, 2.9 GB in 89 s. Previous macOS Sonoma installer on the stick sacrificed.
+- OMDb API key registered + activated (saved off-repo).
+- `sudo` on user's Mac does not do tilde expansion (probably a shell alias) — had to use absolute path for `dd`. Noted for future runbooks.
+
+### 2026-08-07 — Network topology confirmed
+
+- Starlink + TP-Link Deco mesh network. Gateway is **192.168.1.1**.
+- Managed via the Deco mobile app (no useful web UI at 192.168.1.1).
+- **Open question for Phase 3:** is the Deco in **Router mode** (→ DHCP reservation via Deco app: More → Advanced → IP Reservation) or **Access Point mode** (→ Starlink app doesn't expose IP reservation; fall back to a **static IP configured on Ubuntu via netplan** in P3.7)? Check Deco app → More → Operation Mode at P3.7.
+
+### Template
+
+
 
 ### 2026-MM-DD — Phase X: <summary>
 
@@ -20,7 +39,7 @@ _(empty — nothing done yet. Format below.)_
 ## Key values (fill in as you go)
 
 - **LAN IP (reserved):** _tbd_
-- **LAN CIDR (used in ufw rules):** _tbd_
+- **LAN CIDR (used in ufw rules):** `192.168.1.0/24` (gateway 192.168.1.1, Starlink + Deco mesh)
 - **Hostname:** `castcrate` (`.local` via avahi)
 - **User:** `castcrate`
 - **Download path:** `/home/castcrate/castcrate-downloads`

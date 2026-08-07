@@ -1,7 +1,7 @@
 # media-mac-deploy — Tasks
 
 **Last updated:** 2026-08-07
-**Progress:** 0/47 — not started
+**Progress:** 6/47 — Phase 1 complete ✅ ; Phase 2 next
 
 Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick items as you complete them; update the "Last updated" date each session and ping me with what you did (and any surprises) so I can help debug.
 
@@ -9,14 +9,14 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 
 ## Phase 1 — Prep (any working machine, ~30 min)
 
-- [ ] **1.1** Back up the Mac (Time Machine or manual copy of anything precious).
-- [ ] **1.2** Locate a spare 8 GB+ USB stick (will be wiped).
-- [ ] **1.3** Download Ubuntu 26.04 LTS Server ISO from `https://releases.ubuntu.com/26.04/` (`ubuntu-26.04-live-server-amd64.iso`).
-- [ ] **1.4** Register OMDb API key at `https://www.omdbapi.com/apikey.aspx`; click the activation link in the confirmation email; save the key.
-- [ ] **1.5** Write the ISO to USB (`dd` on macOS or balenaEtcher).
-- [ ] **1.6** Note the router admin URL + credentials — needed for the DHCP reservation in Phase 3.
+- [x] **1.1** Back up the Mac (Time Machine or manual copy of anything precious).
+- [x] **1.2** Locate a spare 8 GB+ USB stick (will be wiped).
+- [x] **1.3** Download Ubuntu 26.04 LTS Server ISO from `https://releases.ubuntu.com/26.04/` (`ubuntu-26.04-live-server-amd64.iso`).
+- [x] **1.4** Register OMDb API key at `https://www.omdbapi.com/apikey.aspx`; click the activation link in the confirmation email; save the key.
+- [x] **1.5** Write the ISO to USB (`dd` on macOS or balenaEtcher).
+- [x] **1.6** Note the router admin URL + credentials — needed for the DHCP reservation in Phase 3.
 
-**Acceptance:** USB installer ready, OMDb key saved, Mac backup complete.
+**Acceptance:** USB installer ready, OMDb key saved, Mac backup complete. ✅ (2026-08-07)
 
 ---
 
