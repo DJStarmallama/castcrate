@@ -1,7 +1,7 @@
 # media-mac-deploy — Tasks
 
 **Last updated:** 2026-08-07
-**Progress:** 6/47 — Phase 1 complete ✅ ; Phase 2 next
+**Progress:** 11/47 — Phase 2 complete ✅ ; Phase 3 next (headless via SSH)
 
 Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick items as you complete them; update the "Last updated" date each session and ping me with what you did (and any surprises) so I can help debug.
 
@@ -22,15 +22,15 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 
 ## Phase 2 — Install Ubuntu at the Mac (~45–60 min)
 
-- [ ] **2.1** Plug Mac into ethernet + power. Insert the USB installer.
-- [ ] **2.2** Power on holding Option (⌥); pick the orange "EFI Boot" entry.
-- [ ] **2.3** Run the installer — accept defaults except: keyboard = English (Macintosh), hostname = `castcrate`, username = `castcrate`, entire-disk install with LVM OFF.
-- [ ] **2.4** Enable OpenSSH server; paste an SSH public key if you have one.
-- [ ] **2.5** Skip Ubuntu Pro and all featured snaps.
-- [ ] **2.6** Wait for install to complete (10–20 min); reboot; pull the USB out.
-- [ ] **2.7** Log in at the physical console; note the ethernet IPv4 address printed above the prompt.
+- [x] **2.1** Plug Mac into ethernet + power. Insert the USB installer.
+- [x] **2.2** Power on holding Option (⌥); pick the orange "EFI Boot" entry.
+- [x] **2.3** Run the installer — accept defaults except: keyboard = English (Macintosh), hostname = `castcrate`, username = `castcrate`, entire-disk install with LVM OFF.
+- [x] **2.4** Enable OpenSSH server; paste an SSH public key if you have one.
+- [x] **2.5** Skip Ubuntu Pro and all featured snaps.
+- [x] **2.6** Wait for install to complete (10–20 min); reboot; pull the USB out.
+- [x] **2.7** Log in at the physical console; note the ethernet IPv4 address printed above the prompt.
 
-**Acceptance:** local console login as `castcrate` works; LAN IP is known.
+**Acceptance:** local console login as `castcrate` works; LAN IP is known. ✅ (2026-08-07, IP = 192.168.1.53)
 
 ---
 

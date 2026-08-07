@@ -23,6 +23,12 @@ Running notes / decisions / surprises from executing the runbook. Grow this as t
 - Managed via the Deco mobile app (no useful web UI at 192.168.1.1).
 - **Open question for Phase 3:** is the Deco in **Router mode** (→ DHCP reservation via Deco app: More → Advanced → IP Reservation) or **Access Point mode** (→ Starlink app doesn't expose IP reservation; fall back to a **static IP configured on Ubuntu via netplan** in P3.7)? Check Deco app → More → Operation Mode at P3.7.
 
+### 2026-08-07 — Phase 2 complete ✅
+
+- Ubuntu Server 26.04 installed cleanly on the 500 GB SSD via the USB installer. No boot quirks, no `nomodeset` needed.
+- Hostname `castcrate`, user `castcrate`, entire-disk install, LVM off, OpenSSH server on, no snaps.
+- First-boot ethernet DHCP: **192.168.1.53**. Console login verified. Lid closed → headless from here.
+
 ### Template
 
 
@@ -38,7 +44,7 @@ Running notes / decisions / surprises from executing the runbook. Grow this as t
 
 ## Key values (fill in as you go)
 
-- **LAN IP (reserved):** _tbd_
+- **LAN IP (reserved):** `192.168.1.53` (current DHCP lease; pin in P3.7)
 - **LAN CIDR (used in ufw rules):** `192.168.1.0/24` (gateway 192.168.1.1, Starlink + Deco mesh)
 - **Hostname:** `castcrate` (`.local` via avahi)
 - **User:** `castcrate`
