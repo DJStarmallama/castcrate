@@ -1,7 +1,7 @@
 # CastCrate - Master Overview
 
 **Last Updated:** 2026-08-08
-**Version:** v1.2
+**Version:** v1.3
 
 ## Project Summary
 
@@ -13,7 +13,7 @@ All product features currently live inside the **castcrate** umbrella epic (`doc
 
 | Feature | Status | Tasks | Notes |
 |---------|--------|-------|-------|
-| **castcrate** (epic, 19 features) | 🟡 In Progress | 293/463 (63%) | Self-hosted cast/stream box — discovery, torrent sources, playback pipeline, Chromecast output, dedicated-hardware deploy runbook, and TMDB metadata pass (planned). 1 feature complete (hardening), 15 in progress, 3 planned/requirements-only (discovery, dev-ops, tmdb-metadata). |
+| **castcrate** (epic, 19 features) | 🟡 In Progress | ~312/463 (67%) | Self-hosted cast/stream box — discovery, torrent sources, playback pipeline, Chromecast output; **deployed to dedicated 2011 MBP hardware and casting to a real Chromecast** end-to-end. TMDB metadata pass planned. 2 features complete (hardening + media-mac-deploy 🎯), 14 in progress, 3 planned/requirements-only (discovery, dev-ops, tmdb-metadata). |
 
 ## Integration Points
 
@@ -24,6 +24,7 @@ All product features currently live inside the **castcrate** umbrella epic (`doc
 
 ## Changelog
 
+- v1.3 (2026-08-08): **Deploy runbook COMPLETE 🎯.** `media-mac-deploy` at 47/47 (100%) — casting Interstellar to a real Chromecast HD ("Master Llama"), retention timer scheduled, auto-start on boot proven. The runbook execution surfaced and fixed a run of production bugs on the way: crash resilience (`4cb84d9`), the systemd-sandbox trio — silent-swallow / tilde footgun / DELETE-history leak (`1d65f44`), player overlay layering (`4ca3c2b`), audio loudness chain — compressor + loudnorm + limiter (`254bae8`, `6e4f73e`), and SIGTERM bounded shutdown (`b48f0b5`). Along the way the previous "Starlink CGNAT peer-starvation" diagnosis was disproven — real root cause was a stray tilde putting `DOWNLOAD_PATH` outside the systemd unit's `ReadWritePaths=`. `player-buffer-ux` up to 8/26 (Phase 6 overlay layering shipped).
 - v1.2 (2026-08-08): **Deploy progress + Jellyfin-borrow features.** `media-mac-deploy` at 33/47 (70% — Phases 1–5 done, systemd unit live, one server-crash bug fixed en route, Chromecast test in progress). Added **`castcrate/tmdb-metadata`** as a new planned feature (TMDB provider alongside OMDb, inspired by Jellyfin). Folded the "player overlay layering fix" (Jellyfin-inspired portal + z-index pattern) into **`player-buffer-ux` as Phase 6** — closes three production bugs found during the deploy's P5.7 cast test.
 - v1.1 (2026-08-07): **Added `media-mac-deploy` runbook feature** — 7-phase, 47-task runbook to deploy CastCrate onto a dedicated Early-2011 MacBook Pro 13" running Ubuntu Server 26.04. Epic now 18 features (260/463 tasks, 56%).
 - v1.0 (2026-08-06): **Initial master overview** — Created with a single `castcrate` epic row after rolling all 17 pre-existing features under `docs/features/castcrate/`. Rollup: 260/416 tasks (63%), 1 feature complete (hardening).

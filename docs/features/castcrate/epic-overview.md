@@ -2,7 +2,7 @@
 
 **Epic:** castcrate
 **Status:** 🟡 In Progress
-**Last Updated:** 2026-08-08
+**Last Updated:** 2026-08-08 (deploy runbook complete — 2 features complete)
 
 > **This file is the epic marker.** Its presence in `docs/features/castcrate/` tells every Beast Mode command that this folder is an **epic**, not a plain feature. Castcrate is currently organised as a single umbrella epic containing every feature in the project — see Purpose for the rationale (and non-rationale) of that choice.
 
@@ -38,12 +38,12 @@ The full set of features that make up castcrate. Grouped by theme for readabilit
 | 12 | proxy-routing | 🟡 In Progress | 21/28 (75%) | Streaming proxy & routing layer |
 | 13 | transcoding | 🟡 In Progress | 11/22 (50%) | On-the-fly transcoding |
 | 14 | subtitles | 🟡 In Progress | 10/20 (50%) | Subtitle sourcing & rendering |
-| 15 | player-buffer-ux | 🟡 In Progress | 3/26 (12%) | Buffering overlay & warmup UX |
+| 15 | player-buffer-ux | 🟡 In Progress | 8/26 (31%) | Buffering overlay & warmup UX. Phase 6 overlay layering shipped (portal fix for Cast + Subtitle dropdowns, unstuck buffer overlay). |
 | — | **Casting** | | | |
 | 16 | chromecast | 🟡 In Progress | 10/18 (56%) | Chromecast device discovery & session |
 | 17 | cast-controls | 🟡 In Progress | 15/25 (60%) | Play/pause/seek/volume for active cast |
 | — | **Ops** | | | |
-| 18 | media-mac-deploy | 🟡 In Progress | 33/47 (70%) | Runbook — deploy CastCrate onto the dedicated 2011 MBP media box (Ubuntu 26.04) |
+| 18 | media-mac-deploy | 🟢 Complete | 47/47 (100%) | Runbook — deploy CastCrate onto the dedicated 2011 MBP media box (Ubuntu 26.04). ✅ Casting Interstellar to Master Llama end-to-end, retention timer scheduled, auto-start on boot proven. |
 | — | **Discovery (planned)** | | | |
 | 19 | tmdb-metadata | 🔵 Planned | — | Add TMDB as a metadata provider alongside OMDb (backdrops, better TV data, richer search) — inspired by Jellyfin |
 
@@ -89,8 +89,8 @@ Cross-feature tech debt and review findings. **Populated and updated by `/review
 
 ## Master Overview Rollup
 
-- **Rollup status:** In Progress (1/19 features complete — hardening; 293/463 tasks ≈ 63%, tmdb-metadata unstarted). Player-buffer-ux gained a Phase 6 overlay-layering fix pass (adds ~9 tasks) to close the three bugs found during the media-mac-deploy P5.7 cast test.
-- **One-line summary for master:** Self-hosted cast/stream box — discovery, torrent sources, playback pipeline, Chromecast output, dedicated-hardware deploy runbook, and TMDB metadata pass (planned).
+- **Rollup status:** In Progress (2/19 features complete — hardening + **media-mac-deploy 🎯**; ~312/463 tasks ≈ 67%). Deploy landed with a real end-to-end cast on dedicated 2011 MBP hardware; the runbook execution surfaced and fixed a run of production bugs on the way (crash resilience `4cb84d9`, systemd-sandbox hygiene `1d65f44`, player overlay layering `4ca3c2b`, audio loudness chain `254bae8`/`6e4f73e`, SIGTERM shutdown `b48f0b5`).
+- **One-line summary for master:** Self-hosted cast/stream box — discovery, torrent sources, playback pipeline, Chromecast output; deployed to dedicated 2011 MBP hardware and casting to a real Chromecast; TMDB metadata pass planned.
 
 ---
 
