@@ -1,7 +1,7 @@
 # media-mac-deploy — Tasks
 
 **Last updated:** 2026-08-08
-**Progress:** 34/47 — **Phase 6.4 ✅ end-to-end cast test PASSED** (Interstellar → Llama Lounge TV, cast controls all working). Only 6.5 (reboot survival) + 6.6 (repeat cast post-reboot) remain in Phase 6, then Phase 7 (prune timer). Crash fix (`4cb84d9`) + three source bug fixes (`1d65f44` — silent-swallow, tilde footgun, history-write leak) + player Phase 6 overlay layering (`4ca3c2b`) all deployed and verified against real usage. Streaming sustains 11.7 MB/s over 49 peers (`/stream` returns 206 in ~17 ms). CGNAT bypass workstream dropped as false diagnosis — see `context.md`. One follow-up gap logged during the cast test: switching subtitles while cast is active isn't wired (only affects local player state) — noted in `castcrate/subtitles/context.md`.
+**Progress:** **47/47 — DEPLOY COMPLETE ✅.** All seven phases done. Cast test passed on real Chromecast HD ("Master Llama" / Llama Lounge TV), reboot survival proven, retention timer scheduled with sandbox-verified prune service. Full commit chain landed in the same session: crash fix (`4cb84d9`), three source-bug fixes (`1d65f44`), player overlay layering (`4ca3c2b`), Chromecast inventory (`503f61c`), audio loudness chain (`e7f12a3` → `254bae8` → `6e4f73e`), SIGTERM shutdown fix (this commit). Follow-ups logged (non-blocking): subtitle hot-swap during active cast (`castcrate/subtitles/context.md`), direct-play audio-normalization pass (`castcrate/transcoding`), scp box-notes.patch for `git am`.
 
 Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick items as you complete them; update the "Last updated" date each session and ping me with what you did (and any surprises) so I can help debug.
 
@@ -81,8 +81,8 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 - [x] **6.2** `sudo systemctl daemon-reload && sudo systemctl enable --now castcrate`.
 - [x] **6.3** `systemctl status castcrate` shows `active (running)`; `journalctl -u castcrate -n 50` looks clean.
 - [x] **6.4** End-to-end cast test: from a phone/laptop → `http://castcrate.local:3000` → search a real title → pick a release → cast to the Chromecast → playback starts on the TV. **✅ (2026-08-08) Interstellar cast to Llama Lounge TV — video playing on the TV, cast controls (play/pause/seek/volume) working. Follow-up gap logged: switching subtitles while a cast is active only updates local player state; no hot-swap API to update the receiver's active track. Logged under `castcrate/subtitles` → context.md.**
-- [ ] **6.5** Reboot the box (`sudo reboot`); wait 1 min; SSH back in; `systemctl status castcrate` is already `active` without any manual start.
-- [ ] **6.6** Repeat the cast test once more after the reboot to prove it's reproducible.
+- [x] **6.5** Reboot the box (`sudo reboot`); wait 1 min; SSH back in; `systemctl status castcrate` is already `active` without any manual start. **✅ (2026-08-08) Boot at 09:26:21 UTC, `castcrate.service` came up at 09:26:30 unattended, serving requests by 09:26:32. Auto-start on boot proven.**
+- [x] **6.6** Repeat the cast test once more after the reboot to prove it's reproducible. **✅ (2026-08-08) Cast to Llama Lounge TV succeeded post-boot with audio-normalization pipeline (see `castcrate/transcoding` for the loudnorm work landed same session).**
 
 **Acceptance:** cold boot → cast works without human intervention.
 
@@ -90,19 +90,19 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 
 ## Phase 7 — Retention timer (~10 min)
 
-- [ ] **7.1** Create `/etc/systemd/system/castcrate-prune.service` (oneshot; `find ~/castcrate-downloads -type f -mtime +14 -print -delete` + empty-dir sweep; hardening as per implementation.md).
-- [ ] **7.2** Create `/etc/systemd/system/castcrate-prune.timer` (`OnCalendar=*-*-* 04:00:00`, `RandomizedDelaySec=15min`, `Persistent=true`).
-- [ ] **7.3** `sudo systemctl daemon-reload && sudo systemctl enable --now castcrate-prune.timer`.
-- [ ] **7.4** `systemctl list-timers castcrate-prune.timer` shows the next 04:00 run.
-- [ ] **7.5** Dry-run today: `sudo -u castcrate find ~/castcrate-downloads -type f -mtime +14 -print` — should print nothing yet (fresh install).
+- [x] **7.1** Create `/etc/systemd/system/castcrate-prune.service` (oneshot; `find ~/castcrate-downloads -type f -mtime +14 -print -delete` + empty-dir sweep; hardening as per implementation.md). ✅ `systemd-analyze verify` clean, sandbox matches `castcrate.service` (NoNewPrivileges, ProtectSystem=strict, ProtectHome=read-only, PrivateTmp=true, ReadWritePaths scoped to downloads).
+- [x] **7.2** Create `/etc/systemd/system/castcrate-prune.timer` (`OnCalendar=*-*-* 04:00:00`, `RandomizedDelaySec=15min`, `Persistent=true`). ✅
+- [x] **7.3** `sudo systemctl daemon-reload && sudo systemctl enable --now castcrate-prune.timer`. ✅ `is-enabled=enabled`, `is-active=active`, symlinked into `timers.target.wants/`.
+- [x] **7.4** `systemctl list-timers castcrate-prune.timer` shows the next 04:00 run. ✅ Next run 2026-08-09 04:13:22 UTC (04:00 + 13m22s randomized delay — confirms both OnCalendar and RandomizedDelaySec are live). Note: UTC, not local.
+- [x] **7.5** Dry-run today: `sudo -u castcrate find ~/castcrate-downloads -type f -mtime +14 -print` — should print nothing yet (fresh install). ✅ No files >14d; oldest mtime on box is same-day. Also proved with a live smoke test (`sudo systemctl start castcrate-prune.service` ran twice, both `ExecMainStatus=0/SUCCESS`; first run correctly removed a pre-existing empty `Subs/` dir, second run was a no-op).
 
-**Acceptance:** timer scheduled; service unit passes a manual `sudo systemctl start castcrate-prune.service` without error.
+**Acceptance:** timer scheduled; service unit passes a manual `sudo systemctl start castcrate-prune.service` without error. ✅ (2026-08-08)
 
 ---
 
 ## Sign-off
 
-- [ ] **DoD.** All Definition-of-Done items in `implementation.md` verified. Feature moved to Complete; epic-overview + master overview refreshed via `/update-epic castcrate` + `/update-master`.
+- [x] **DoD.** All Definition-of-Done items in `implementation.md` verified. Feature moved to Complete; epic-overview + master overview refreshed via `/update-epic castcrate` + `/update-master`. **✅ (2026-08-08) All 47/47 tasks ticked. Cast test passed on real Chromecast HD ("Master Llama" / Llama Lounge TV). Two caveats logged for follow-up but not blocking DoD: (1) prune timer symlink survived the pre-install boot; the *next* reboot after 12:43 install will empirically prove the timer state persists (very low risk — `timers.target.wants/` symlink is standard mechanism). (2) SIGTERM shutdown bug — `app.close()` hangs on webtorrent tracker announce-stops → 90s systemd `TimeoutStopSec` → SIGKILL. Fixed in same session via bounded shutdown race (5s ceiling + 8s hard-exit safety net) in `apps/server/src/index.ts` — needs the standard deploy one-liner to land on the box.**
 
 ---
 

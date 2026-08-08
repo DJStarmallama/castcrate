@@ -75,8 +75,21 @@ app.addHook("onClose", async () => {
   await shutdown();
 });
 
+// Bounded shutdown. `app.close()` runs the onClose hook which awaits
+// webtorrent's `client.destroy(cb)` — that callback can hang forever
+// waiting for tracker announce-stops to ack, which then blocks
+// `app.close()`, which blocks the SIGTERM handler, which trips systemd's
+// TimeoutStopSec=90s and forces SIGKILL. Race the graceful close against
+// a 5s ceiling; a hard-exit safety net at 8s covers the race logic itself
+// hanging.
+let stopping = false;
 const stop = async () => {
-  await app.close();
+  if (stopping) return;
+  stopping = true;
+  setTimeout(() => process.exit(1), 8_000).unref();
+  const graceful = app.close().catch((err) => app.log.error({ err }, "app.close() errored"));
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5_000));
+  await Promise.race([graceful, timeout]);
   process.exit(0);
 };
 process.on("SIGINT", stop);
