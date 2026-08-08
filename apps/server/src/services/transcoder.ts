@@ -64,12 +64,16 @@ export function spawnTranscode(source: Readable): TranscodeHandle {
     "-c:a", "aac",
     "-b:a", "192k",
     "-ac", "2",
-    // EBU R128 loudness normalization. YTS/x264 releases often mix dialogue
-    // 10-15 LUFS below streaming platforms; this brings them into line with
-    // Netflix/YouTube (-14 to -16 LUFS integrated) so cast volume feels normal
-    // at typical TV levels. Single-pass streaming mode — no two-pass measure
-    // step, applies rolling dynamic gain in real time.
-    "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+    // Audio loudness chain, in order:
+    //   1. acompressor — dynamic-range compression. Brings quiet dialogue up
+    //      (worst offender in blockbuster mixes: Nolan-style "whisper dialogue,
+    //      IMAX boom effects"). ratio=4:1 above -24dB threshold.
+    //   2. loudnorm — EBU R128 target -14 LUFS integrated (matches YouTube /
+    //      Spotify streaming target; 2 LUFS hotter than film-mix -16 default).
+    //   3. volume — post-gain +3.5dB. Loudnorm's TP=-1 gives us that headroom.
+    // The combined effect is ~6-8dB louder perceived vs untreated x264 audio,
+    // with tighter dynamics so dialogue is audible at normal TV levels.
+    "-af", "acompressor=threshold=-24dB:ratio=4:attack=5:release=100,loudnorm=I=-14:TP=-1.0:LRA=7,volume=1.5",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
