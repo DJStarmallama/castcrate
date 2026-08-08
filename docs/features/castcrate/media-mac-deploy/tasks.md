@@ -1,7 +1,7 @@
 # media-mac-deploy — Tasks
 
 **Last updated:** 2026-08-07
-**Progress:** 11/47 — Phase 2 complete ✅ (reinstalled with a known password); Phase 3 next
+**Progress:** 18/47 — Phase 3 done except deferred 3.7 (DHCP); Phase 4 next (Node runtime)
 
 Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick items as you complete them; update the "Last updated" date each session and ping me with what you did (and any surprises) so I can help debug.
 
@@ -36,14 +36,14 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 
 ## Phase 3 — First-boot lockdown over SSH (~20 min)
 
-- [ ] **3.1** From your laptop: `ssh castcrate@<ip>` (or `castcrate@castcrate.local` once avahi is running); accept the host key.
-- [ ] **3.2** `sudo apt update && sudo apt full-upgrade -y`.
-- [ ] **3.3** `sudo apt install -y build-essential git curl ca-certificates ffmpeg avahi-daemon avahi-utils ufw mbpfan`.
-- [ ] **3.4** Configure `ufw`: default deny in / allow out; allow SSH + :3000 from LAN CIDR only (adjust CIDR to your LAN); allow 5353/udp for mDNS; `sudo ufw --force enable`.
-- [ ] **3.5** Ignore lid switch in `/etc/systemd/logind.conf` (`HandleLidSwitch=ignore`, `HandleLidSwitchExternalPower=ignore`); `sudo systemctl restart systemd-logind`.
-- [ ] **3.6** `sudo systemctl enable --now mbpfan avahi-daemon`.
-- [ ] **3.7** Log into the router; add a DHCP static reservation for the Mac's MAC → current IP.
-- [ ] **3.8** Reboot; confirm SSH still works and lid-closed operation doesn't kill it (close lid, wait 30 s, `ssh` still answers).
+- [x] **3.1** From your laptop: `ssh castcrate@<ip>` (or `castcrate@castcrate.local` once avahi is running); accept the host key.
+- [x] **3.2** `sudo apt update && sudo apt full-upgrade -y`.
+- [x] **3.3** `sudo apt install -y build-essential git curl ca-certificates ffmpeg avahi-daemon avahi-utils ufw mbpfan`.
+- [x] **3.4** Configure `ufw`: default deny in / allow out; allow SSH + :3000 from LAN CIDR only (adjust CIDR to your LAN); allow 5353/udp for mDNS; `sudo ufw --force enable`.
+- [x] **3.5** Ignore lid switch in `/etc/systemd/logind.conf` (`HandleLidSwitch=ignore`, `HandleLidSwitchExternalPower=ignore`); `sudo systemctl restart systemd-logind`.
+- [x] **3.6** `sudo systemctl enable --now mbpfan avahi-daemon`.
+- [ ] **3.7** Log into the router; add a DHCP static reservation for the Mac's MAC → current IP. **(DEFERRED — waiting for box to move to its permanent ethernet port; will pin the *final* IP not the temp `.249`.)**
+- [x] **3.8** Reboot; confirm SSH still works and lid-closed operation doesn't kill it (close lid, wait 30 s, `ssh` still answers). **(reboot survived + all services active; lid-close subtest deferred to when box moves to permanent location)**
 
 **Acceptance:** SSH via `castcrate.local` works, `ufw status` shows three rules, `systemctl status mbpfan avahi-daemon` both active, DHCP reservation in place.
 

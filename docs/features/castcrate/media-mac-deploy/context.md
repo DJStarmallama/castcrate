@@ -40,6 +40,26 @@ Running notes / decisions / surprises from executing the runbook. Grow this as t
 - **Temp IP: 192.168.1.249** (box is on a temporary ethernet port for setup; will move to final port after Phase 6). No cast happening yet → moving IP is harmless.
 - **P3.7 plan:** wait until box is on its permanent port, note the IP the Deco assigns there, then either add a Deco IP Reservation (if Deco is in Router mode) or set a static IP on Ubuntu via netplan (if Deco is in AP mode). LAN CIDR `192.168.1.0/24` is stable either way, so the ufw rules in P3.4 don't need to change.
 
+### 2026-08-08 — Phase 3 started
+
+- SSH working from main laptop to `castcrate@192.168.1.249` on password auth. (Public-key auth via GitHub import didn't line up on first try; enabled `PasswordAuthentication yes` at the console.)
+- Ethernet interface name: **`enp2s0f0`**.
+- Idle temp: 55 °C (fanless — will move under mbpfan control in P3.6).
+- **⚠️ Disk sizing check needed**: root partition reports **~98 GB** ("Usage of /: 7.4% of 97.87GB") on a 500 GB SSD. Either the SSD is smaller than expected or the installer left space unallocated. Investigate with `lsblk` after Phase 3; grow the partition if unallocated. Not blocking.
+- **RESOLVED (2026-08-08):** Ubuntu 26.04 installer used LVM despite "uncheck LVM" instruction. Layout was `sda3` (444 GB PV) with only 100 GB allocated to `ubuntu-vg/ubuntu-lv`. Live-extended with `lvextend -l +100%FREE` + `resize2fs` — root now **437 GB (410 GB free)**, zero downtime. Future runbooks should either confirm the LVM checkbox is actually off, or plan on this LV-extend step as part of Phase 3.
+
+### 2026-08-08 — Phase 3 done ✅ (except deferred 3.7 DHCP)
+
+- System fully updated (`apt full-upgrade`, 40 updates applied). All core packages installed: build-essential, git, curl, ffmpeg, avahi-daemon, avahi-utils, ufw, mbpfan.
+- **ufw** active with LAN-only (192.168.1.0/24) rules for SSH + :3000, and 5353/udp for mDNS (auto v4+v6).
+- **Lid switch** ignored in `logind.conf`; `systemd-logind` restarted.
+- **mbpfan** + **avahi-daemon** enabled + running.
+- Reboot test passed — all services autostarted, SSH reconnected on the first try.
+- Idle temp post-reboot 69 °C (mbpfan not yet under load); will re-check after real workload.
+- **Root filesystem extended** from 100 GB → 437 GB (410 GB free) via `lvextend -l +100%FREE` + `resize2fs`.
+- **DHCP reservation (3.7) deferred** until box moves to its permanent ethernet port.
+- **SSH auth:** password auth is on (was needed after the GitHub key import mismatch on the second install). Consider adding the main-laptop pubkey to `~/.ssh/authorized_keys` on the box later so we can turn password auth off.
+
 ### Template
 
 
