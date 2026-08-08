@@ -291,6 +291,10 @@ export async function removeTorrent(
 ): Promise<void> {
   const client = await getClient();
   meta.delete(infoHash);
+  // webtorrent v2 throws synchronously ("No torrent with id ...") when the
+  // torrent isn't in the client anymore. That throw escapes the callback
+  // wrapper and crashes the process. Short-circuit so DELETE is idempotent.
+  if (!client.get(infoHash)) return;
   return new Promise((resolve, reject) => {
     client.remove(infoHash, { destroyStore: opts.destroyStore }, (err) =>
       err ? reject(err) : resolve(),
