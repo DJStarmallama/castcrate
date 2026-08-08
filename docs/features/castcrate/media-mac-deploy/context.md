@@ -23,11 +23,22 @@ Running notes / decisions / surprises from executing the runbook. Grow this as t
 - Managed via the Deco mobile app (no useful web UI at 192.168.1.1).
 - **Open question for Phase 3:** is the Deco in **Router mode** (→ DHCP reservation via Deco app: More → Advanced → IP Reservation) or **Access Point mode** (→ Starlink app doesn't expose IP reservation; fall back to a **static IP configured on Ubuntu via netplan** in P3.7)? Check Deco app → More → Operation Mode at P3.7.
 
-### 2026-08-07 — Phase 2 complete ✅
+### 2026-08-07 — Phase 2 (first attempt, scrapped)
 
-- Ubuntu Server 26.04 installed cleanly on the 500 GB SSD via the USB installer. No boot quirks, no `nomodeset` needed.
+- Ubuntu Server 26.04 installed cleanly on the 500 GB SSD via the USB installer. No boot quirks.
 - Hostname `castcrate`, user `castcrate`, entire-disk install, LVM off, OpenSSH server on, no snaps.
-- First-boot ethernet DHCP: **192.168.1.53**. Console login verified. Lid closed → headless from here.
+- First-boot ethernet DHCP: **192.168.1.53**.
+- **Password forgotten before first SSH.** GRUB → recovery mode not reachable (Mac EFI + Shift-key timing). Chose to reinstall rather than chroot-passwd — no sunk cost, cleaner slate.
+
+### 2026-08-07 — Reinstall in progress
+
+- Reinstalling from the same USB. Same defaults. **Password written down this time.**
+
+### 2026-08-08 — Phase 2 complete ✅ (second attempt)
+
+- Reinstall clean, console login verified, password saved.
+- **Temp IP: 192.168.1.249** (box is on a temporary ethernet port for setup; will move to final port after Phase 6). No cast happening yet → moving IP is harmless.
+- **P3.7 plan:** wait until box is on its permanent port, note the IP the Deco assigns there, then either add a Deco IP Reservation (if Deco is in Router mode) or set a static IP on Ubuntu via netplan (if Deco is in AP mode). LAN CIDR `192.168.1.0/24` is stable either way, so the ufw rules in P3.4 don't need to change.
 
 ### Template
 
@@ -44,7 +55,7 @@ Running notes / decisions / surprises from executing the runbook. Grow this as t
 
 ## Key values (fill in as you go)
 
-- **LAN IP (reserved):** `192.168.1.53` (current DHCP lease; pin in P3.7)
+- **LAN IP (reserved):** `192.168.1.249` (TEMP DHCP lease on a temporary ethernet port; pin the *final* IP in P3.7 after the box moves to its permanent port)
 - **LAN CIDR (used in ufw rules):** `192.168.1.0/24` (gateway 192.168.1.1, Starlink + Deco mesh)
 - **Hostname:** `castcrate` (`.local` via avahi)
 - **User:** `castcrate`

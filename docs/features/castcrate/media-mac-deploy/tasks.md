@@ -1,7 +1,7 @@
 # media-mac-deploy — Tasks
 
 **Last updated:** 2026-08-07
-**Progress:** 11/47 — Phase 2 complete ✅ ; Phase 3 next (headless via SSH)
+**Progress:** 11/47 — Phase 2 complete ✅ (reinstalled with a known password); Phase 3 next
 
 Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick items as you complete them; update the "Last updated" date each session and ping me with what you did (and any surprises) so I can help debug.
 
@@ -30,7 +30,7 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 - [x] **2.6** Wait for install to complete (10–20 min); reboot; pull the USB out.
 - [x] **2.7** Log in at the physical console; note the ethernet IPv4 address printed above the prompt.
 
-**Acceptance:** local console login as `castcrate` works; LAN IP is known. ✅ (2026-08-07, IP = 192.168.1.53)
+**Acceptance:** local console login as `castcrate` works; LAN IP is known. ✅ (2026-08-08, temp IP = 192.168.1.249; final IP pinned at P3.7 after box moves to permanent port)
 
 ---
 
