@@ -65,15 +65,19 @@ export function spawnTranscode(source: Readable): TranscodeHandle {
     "-b:a", "192k",
     "-ac", "2",
     // Audio loudness chain, in order:
-    //   1. acompressor — dynamic-range compression. Brings quiet dialogue up
-    //      (worst offender in blockbuster mixes: Nolan-style "whisper dialogue,
-    //      IMAX boom effects"). ratio=4:1 above -24dB threshold.
-    //   2. loudnorm — EBU R128 target -14 LUFS integrated (matches YouTube /
-    //      Spotify streaming target; 2 LUFS hotter than film-mix -16 default).
-    //   3. volume — post-gain +3.5dB. Loudnorm's TP=-1 gives us that headroom.
-    // The combined effect is ~6-8dB louder perceived vs untreated x264 audio,
-    // with tighter dynamics so dialogue is audible at normal TV levels.
-    "-af", "acompressor=threshold=-24dB:ratio=4:attack=5:release=100,loudnorm=I=-14:TP=-1.0:LRA=7,volume=1.5",
+    //   1. acompressor — aggressive dynamic-range compression. threshold=-30dB
+    //      + ratio=6:1 pulls quiet dialogue way up (blockbuster mixes assume
+    //      theatrical monitoring, not a TV at "volume 20").
+    //   2. loudnorm — EBU R128 target -10 LUFS integrated. This is HOT (TikTok
+    //      territory; streaming platforms usually stop at -14). Justified for
+    //      cast use: TV speakers benefit from broadcast-style loudness.
+    //   3. alimiter — look-ahead limiter. Post-boost peaks get caught here at
+    //      0.95 (just under 0dBFS) so the extra gain doesn't produce ugly
+    //      digital clipping.
+    // The combined effect is ~12-14dB louder perceived vs untreated x264 audio.
+    // Past this point audio quality degrades noticeably (pumping, distortion) —
+    // if this still isn't loud enough, the ceiling is Chromecast / TV output.
+    "-af", "acompressor=threshold=-30dB:ratio=6:attack=3:release=80,loudnorm=I=-10:TP=-1.0:LRA=6,alimiter=limit=0.95:attack=5",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
