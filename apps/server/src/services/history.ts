@@ -1,9 +1,14 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
-const HISTORY_DIR = join(homedir(), ".castcrate");
+// Sandboxed systemd units block writes to $HOME by default; operators can
+// point this at a ReadWritePaths-approved location (e.g. StateDirectory=
+// gives /var/lib/castcrate for free) without patching the source.
+const HISTORY_DIR = process.env.HISTORY_DIR
+  ? resolve(process.env.HISTORY_DIR)
+  : join(homedir(), ".castcrate");
 const HISTORY_PATH = join(HISTORY_DIR, "history.json");
 const TMP_PATH = `${HISTORY_PATH}.tmp`;
 

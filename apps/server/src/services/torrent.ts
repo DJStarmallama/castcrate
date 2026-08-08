@@ -180,9 +180,17 @@ export async function startTorrent(
       };
       if (torrent.ready) finalize();
       else torrent.once("ready", finalize);
-      torrent.once("error", (err) => {
+      // Persistent listener — post-ready errors (e.g. EROFS from a
+      // sandbox-blocked write path) still need to reach the journal, even
+      // after the setup promise resolved. `reject` after `resolve` is a no-op,
+      // which is fine; the console.error is the load-bearing bit — without
+      // it, torrents die silently and the UI hangs to a 30s stream timeout
+      // while journalctl shows nothing.
+      torrent.on("error", (err) => {
         clearTimeout(timeout);
-        reject(err ?? new Error("torrent error"));
+        const e = err ?? new Error("torrent error");
+        console.error(`[torrent ${torrent.infoHash}] runtime error:`, e);
+        reject(e);
       });
     });
   });

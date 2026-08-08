@@ -409,12 +409,24 @@ export async function torrentRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const destroyStore =
         req.query.destroy === "1" || req.query.destroy === "true";
+
+      // Snapshot before removal — status/meta are gone once the torrent is.
+      const status = await getStatus(req.params.infoHash);
+      const m = getMeta(req.params.infoHash);
+
+      // Cleanup runs FIRST and gets its own error surface. History bookkeeping
+      // must never be able to strand the torrent — a failed history write used
+      // to skip removeTorrent() entirely and leak the download forever.
       try {
-        const status = await getStatus(req.params.infoHash);
-        const m = getMeta(req.params.infoHash);
-        if (status && m) {
+        await removeTorrent(req.params.infoHash, { destroyStore });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "failed to remove";
+        return reply.code(500).send({ error: msg });
+      }
+
+      if (status && m) {
+        try {
           const endedAt = new Date().toISOString();
-          // If a cast-start entry exists, update it. Otherwise append.
           if (m.historyId) {
             const ok = await updateHistoryById(m.historyId, {
               endedAt,
@@ -446,13 +458,15 @@ export async function torrentRoutes(app: FastifyInstance) {
               completed: status.done,
             });
           }
+        } catch (err) {
+          req.log.error(
+            { err, infoHash: req.params.infoHash },
+            "history write failed after torrent removal (torrent still cleaned up)",
+          );
         }
-        await removeTorrent(req.params.infoHash, { destroyStore });
-        return reply.code(204).send();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "failed to remove";
-        return reply.code(500).send({ error: msg });
       }
+
+      return reply.code(204).send();
     },
   );
 
