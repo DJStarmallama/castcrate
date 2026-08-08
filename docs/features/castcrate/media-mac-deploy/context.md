@@ -156,7 +156,7 @@ The "Starlink CGNAT peer-starvation" diagnosis in the previous entry was **wrong
 - **User:** `castcrate`
 - **Download path:** `/home/castcrate/castcrate-downloads`
 - **OMDb key location:** `apps/server/.env` on the box (never committed)
-- **Chromecast device name(s):** _tbd_
+- **Chromecast device name(s):** Llama Lounge TV (Chromecast, 192.168.1.47), **Master Llama** (Chromecast HD, 192.168.1.71 — **recommended target for the 6.4 cast test**: idle, and Chromecast HD matches the runbook's direct-cast/x264 golden path), Llama Lounge display (Nest Hub Max, 192.168.1.131 — avoid for first test; a playback failure on a smart display could be device quirks rather than CastCrate). All three resolve via `avahi-browse -art` AND via CastCrate's own `/api/cast/devices` (verified 2026-08-08).
 
 ## Known gotchas we've hit
 
