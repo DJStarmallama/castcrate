@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@castcrate/shared": "workspace:*",
+    "@radix-ui/react-popover": "^1.1.23",
     "@tanstack/react-query": "^5.62.7",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"

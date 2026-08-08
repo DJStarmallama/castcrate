@@ -1,7 +1,7 @@
 # player-buffer-ux — Tasks
 
 **Last updated:** 2026-08-08
-**Progress:** Quick-fix overlay shipped (commit `a764daa`); Phases 1–5 pending. **Phase 6 (Overlay layering fix pass) added 2026-08-08** to address bugs found during `castcrate/media-mac-deploy` P5.7.
+**Progress:** Quick-fix overlay shipped (commit `a764daa`); Phases 1–5 pending. **Phase 6 (Overlay layering fix pass): 5 of 9 done + 2 N/A** — surgical fix pass landed for the three P5.7 production bugs (buffer-bar dismiss, cast dropdown portal, subtitle dropdown portal). 6.2/6.3 N/A: they assume custom overlay controls, but Player uses native `<video controls>` + header-based app controls, so no `.controls-layer` restructure was needed to close the bugs. 6.8 manual verification pending on the media Mac (needs box + browser).
 
 ## Phase 0 — Quick fix (DONE)
 
@@ -47,13 +47,13 @@
 
 Root cause: video element + controls layer + popovers aren't in a clean stacking context. Adopt the Jellyfin-inspired pattern documented in `implementation.md` → "Overlay layering fix pass" (portal + z-index + pointer-events). Reimplement — no code copy (Jellyfin is GPLv2, we borrow architecture only).
 
-- [ ] **6.1** Add `<div id="overlay-root"></div>` to `apps/web/index.html` after the main app root; document its role.
-- [ ] **6.2** Introduce `.player-root` positioned wrapper in `Player.tsx` with an internal `.controls-layer`; move the buffering overlay and control bar inside it; ensure the `<video>` has no ad-hoc `z-index`.
-- [ ] **6.3** Encode the z-index + `pointer-events` rules in styles (Tailwind classes inline or `apps/web/src/styles/player.css`): controls-layer `pointer-events-none`; individual control bar `pointer-events-auto`; buffering overlay `pointer-events-none` unless state 3 (dead-swarm CTA visible).
-- [ ] **6.4** Install `@radix-ui/react-popover` (or use existing shadcn `<Popover>` if already wired) — audit `package.json` first before adding a dep.
-- [ ] **6.5** Rewrite `CastButton` to render its device picker via a portaled `<Popover>` targeting `#overlay-root`, z-index 100. Trigger sits in the control bar.
-- [ ] **6.6** Rewrite `SubtitleMenu` (or equivalent controls-bar CC/subtitle picker) with the same portaled `<Popover>` pattern.
-- [ ] **6.7** Fix `BufferingOverlay` dismiss (bug #1): subscribe to `video.canplay`; when state predicate becomes false, unmount (not just opacity 0). Verify state 2 (mid-play underrun) still auto-dismisses on `canplay`.
+- [x] **6.1** Add `<div id="overlay-root"></div>` to `apps/web/index.html` after the main app root; document its role.
+- [~] **6.2** ~~Introduce `.player-root` positioned wrapper in `Player.tsx` with an internal `.controls-layer`; move the buffering overlay and control bar inside it; ensure the `<video>` has no ad-hoc `z-index`.~~ **N/A** — Player uses native `<video controls>` at the bottom of the video plus a top HEADER for app-level controls (Cast, Subtitles, File picker, Fullscreen, Close). There is no custom overlay control bar to house in a `.controls-layer`. The three production bugs closed without this restructure. If custom overlay controls get built later (Phase 2's dead-swarm CTAs are a candidate), revisit.
+- [~] **6.3** ~~Encode z-index + `pointer-events` rules in styles~~ **N/A** for the same reason as 6.2. Existing `pointer-events-none` on the buffering overlay backdrop is retained.
+- [x] **6.4** Install `@radix-ui/react-popover` (or use existing shadcn `<Popover>` if already wired) — audit `package.json` first before adding a dep. → Added `@radix-ui/react-popover` (no shadcn wired in the repo).
+- [x] **6.5** Rewrite `CastButton` to render its device picker via a portaled `<Popover>` targeting `#overlay-root`, z-index 100. Trigger sits in the control bar. → `CastBar.tsx` rewritten with `Popover.Root` + `Popover.Portal(container=#overlay-root)`.
+- [x] **6.6** Rewrite `SubtitleMenu` (or equivalent controls-bar CC/subtitle picker) with the same portaled `<Popover>` pattern. → `SubtitlePicker.tsx` rewritten to match.
+- [x] **6.7** Fix `BufferingOverlay` dismiss (bug #1). Root cause: the overlay predicate is `videoBuffering || !hasPlayedOnce`, but `hasPlayedOnce` only set on the `playing` event — which never fires when the browser blocks autoplay (Chrome default). Fix: also set `hasPlayedOnce=true` on `canplay`. Overlay was already conditional-render (not opacity), so unmount is correct once the predicate flips.
 - [ ] **6.8** Manual verification checklist (matches "Verification" in implementation.md):
   - Play a title → buffer bar disappears within ~500 ms of first frame.
   - Cast picker opens over video, is clickable, dismisses on outside-click, keyboard-navigable.

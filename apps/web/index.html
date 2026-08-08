@@ -13,6 +13,10 @@
   </head>
   <body class="text-zinc-100 antialiased" style="background:#0a0606;">
     <div id="root"></div>
+    <!-- Popovers (cast picker, subtitle picker) portal here so they escape
+         the player's fixed z-50 stacking context. Without this, <video>
+         composites over the dropdowns on some browsers. -->
+    <div id="overlay-root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

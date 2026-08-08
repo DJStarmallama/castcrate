@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import * as Popover from "@radix-ui/react-popover";
 import { api, type SubtitleTrack } from "../lib/api";
 
 interface Props {
@@ -10,7 +11,6 @@ interface Props {
 
 export function SubtitlePicker({ infoHash, selected, onSelect }: Props) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
 
   const tracks = useQuery({
     queryKey: ["subtitle-tracks", infoHash],
@@ -19,35 +19,33 @@ export function SubtitlePicker({ infoHash, selected, onSelect }: Props) {
     refetchInterval: (q) => ((q.state.data?.tracks.length ?? 0) > 0 ? false : 3000),
   });
 
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    if (open) document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
   const list = tracks.data?.tracks ?? [];
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={`flex h-10 items-center gap-2 rounded-full px-3 text-sm transition ${
-          selected
-            ? "bg-emerald-500/15 text-emerald-200"
-            : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-        }`}
-        title={selected ? `Subtitles: ${selected.language}` : "Subtitles off"}
-        aria-label="Subtitles"
-      >
-        <CcIcon />
-        <span className="hidden md:inline">
-          {selected ? selected.language : "CC"}
-        </span>
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-zinc-800 bg-zinc-950 p-2 shadow-xl">
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          className={`flex h-10 items-center gap-2 rounded-full px-3 text-sm transition ${
+            selected
+              ? "bg-emerald-500/15 text-emerald-200"
+              : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+          }`}
+          title={selected ? `Subtitles: ${selected.language}` : "Subtitles off"}
+          aria-label="Subtitles"
+        >
+          <CcIcon />
+          <span className="hidden md:inline">
+            {selected ? selected.language : "CC"}
+          </span>
+        </button>
+      </Popover.Trigger>
+      {/* Portal to #overlay-root — see CastBar for rationale. */}
+      <Popover.Portal container={typeof document !== "undefined" ? document.getElementById("overlay-root") : undefined}>
+        <Popover.Content
+          align="end"
+          sideOffset={8}
+          className="z-[100] w-64 rounded-xl border border-zinc-800 bg-zinc-950 p-2 text-zinc-100 shadow-xl outline-none"
+        >
           <div className="px-3 py-2 text-xs uppercase tracking-wider text-zinc-500">
             Subtitles
           </div>
@@ -89,9 +87,9 @@ export function SubtitlePicker({ infoHash, selected, onSelect }: Props) {
               )}
             </button>
           ))}
-        </div>
-      )}
-    </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 

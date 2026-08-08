@@ -126,22 +126,27 @@ export function Player({ movie, session, onClose }: Props) {
   // Track the local <video> element's playback readiness so we can show
   // a buffering overlay during the initial peer-warmup phase and whenever
   // the browser exhausts its buffer mid-play.
+  //
+  // hasPlayedOnce doubles as the overlay-dismiss latch. Setting it only on
+  // `playing` leaves the overlay stuck when the browser blocks autoplay —
+  // `playing` never fires until the user clicks the native play button, and
+  // the overlay covers the click area. Treat `canplay` (video has enough
+  // data to play) as "buffer job done" for overlay purposes.
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const onPlaying = () => {
+    const markReady = () => {
       setVideoBuffering(false);
       setHasPlayedOnce(true);
     };
     const onWaiting = () => setVideoBuffering(true);
-    const onCanPlay = () => setVideoBuffering(false);
-    v.addEventListener("playing", onPlaying);
+    v.addEventListener("playing", markReady);
+    v.addEventListener("canplay", markReady);
     v.addEventListener("waiting", onWaiting);
-    v.addEventListener("canplay", onCanPlay);
     return () => {
-      v.removeEventListener("playing", onPlaying);
+      v.removeEventListener("playing", markReady);
+      v.removeEventListener("canplay", markReady);
       v.removeEventListener("waiting", onWaiting);
-      v.removeEventListener("canplay", onCanPlay);
     };
   }, [playUrl]);
 

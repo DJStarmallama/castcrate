@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import * as Popover from "@radix-ui/react-popover";
 import type { CastDevice } from "@castcrate/shared";
 import { api, type SubtitleTrack } from "../lib/api";
 
@@ -29,7 +30,6 @@ export function CastBar({
   stremioHttpStream = false,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
 
   const devices = useQuery({
     queryKey: ["cast-devices"],
@@ -64,14 +64,6 @@ export function CastBar({
     onSettled: () => onSessionChange(null),
   });
 
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    if (open) document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
   if (sessionId) {
     return (
       <button
@@ -87,19 +79,27 @@ export function CastBar({
   const list = devices.data?.devices ?? [];
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-full bg-zinc-900 px-4 py-2 text-sm hover:bg-zinc-800"
-      >
-        <CastIcon />
-        Cast
-        {list.length > 0 && (
-          <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs">{list.length}</span>
-        )}
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-zinc-800 bg-zinc-950 p-2 shadow-xl">
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button className="flex items-center gap-2 rounded-full bg-zinc-900 px-4 py-2 text-sm hover:bg-zinc-800">
+          <CastIcon />
+          Cast
+          {list.length > 0 && (
+            <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs">{list.length}</span>
+          )}
+        </button>
+      </Popover.Trigger>
+      {/*
+        Portal target = #overlay-root (in index.html, outside the player's fixed
+        z-50 wrapper). This is the load-bearing fix: without a portal, the
+        dropdown gets composited under the <video> element on some browsers.
+      */}
+      <Popover.Portal container={typeof document !== "undefined" ? document.getElementById("overlay-root") : undefined}>
+        <Popover.Content
+          align="end"
+          sideOffset={8}
+          className="z-[100] w-72 rounded-xl border border-zinc-800 bg-zinc-950 p-2 text-zinc-100 shadow-xl outline-none"
+        >
           <div className="px-3 py-2 text-xs uppercase tracking-wider text-zinc-500">
             Cast to device
           </div>
@@ -130,9 +130,9 @@ export function CastBar({
                 : playOn.error.message}
             </p>
           )}
-        </div>
-      )}
-    </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
