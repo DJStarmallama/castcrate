@@ -1,7 +1,7 @@
 # player-buffer-ux — Context
 
 **Last updated:** 2026-08-08
-**Status:** Spec / not started (quick-fix overlay landed as commit `a764daa`) — **new production bugs found 2026-08-08 during castcrate/media-mac-deploy P5.7, see "Bugs found in production testing" at bottom of this file**
+**Status:** Spec / not started (quick-fix overlay landed as commit `a764daa`) — **Phase 6 (Overlay layering fix pass) added 2026-08-08 to close the three production bugs found during castcrate/media-mac-deploy P5.7. See implementation.md → "Overlay layering fix pass" and tasks.md → Phase 6.**
 
 ## Problem
 
@@ -54,3 +54,24 @@ Out:
 - **`bufferPercent = 0` is valid.** Some users want absolutely-zero buffering (live-start, accept stalls). Don't gate on `bufferPercent > 0` anywhere.
 - **Server `getStatus()` polling at 1.5s during buffering is a 40% increase in /api/torrent/:hash QPS per playing user.** Cheap (the route just reads webtorrent state) but worth tracking if multiple users run cratebuddy on the same server.
 - **`<video>.preload` is `auto` by default**, which Chrome respects but Safari sometimes ignores. The buffering overlay's accuracy depends on `waiting`/`canplay` events firing — Safari may emit them differently. Test on both.
+
+## Bugs found in production testing (2026-08-08, from castcrate/media-mac-deploy P5.7)
+
+Manual verification during the deploy runbook surfaced these player-UX regressions on the browser player (Chrome on macOS, streaming from the castcrate box). All three probably share one root cause (stacking context + `pointer-events` misconfiguration). Fixed in **Phase 6** of `tasks.md`; approach documented in `implementation.md` → "Overlay layering fix pass".
+
+- 🐛 **Buffer bar never dismisses.** During playback the buffer bar / overlay stays visible over the video and there is no way to minimise/hide it. Expected: should unmount when playback stabilises (fire on `canplay`, not just fade opacity). Likely the current quick-fix `BufferingOverlay` is always-mounted with an opacity switch, or the state machine never receives the `canplay` transition.
+- 🐛 **Cast button hidden by the video element.** Cannot reach the "Cast to Chromecast" control while a movie is playing — the video element sits above the control layer. Expected: cast picker should render in a portaled popover *over* the video.
+- 🐛 **Captions/subtitles button hidden by the video element.** Same root cause as the cast button — the subtitle menu is obscured. Expected: menu opens over the video via the same portaled popover pattern.
+
+### Fix approach (borrowed from Jellyfin architecture, reimplemented; GPLv2 → no code copy)
+
+All three share a stacking-context problem. Jellyfin's `jellyfin-web` player solves it with:
+
+1. **Positioned `.player-root`** wrapping video + controls, establishing a stacking context.
+2. **`.controls-layer`** covering the frame at `z-index: 10`, `pointer-events: none`. Individual bars / CTAs opt back in with `pointer-events: auto`.
+3. **Popovers portaled** to a top-level `<div id="overlay-root">` at `z-index: 100`, outside the player subtree — so the picker menus render above everything and aren't clipped by any parent `overflow: hidden`.
+4. **BufferingOverlay** dismisses on `canplay` — conditional render, not just opacity.
+
+Reimplement with **Radix Popover** (or the shadcn `<Popover>` primitive that wraps it) — same portal + focus-trap + escape-key behaviour, permissive-licensed, small dep. Full spec in `implementation.md` → "Overlay layering fix pass"; checklist in `tasks.md` → Phase 6.
+
+**Order-of-operations:** finish `castcrate/media-mac-deploy` Phases 6–7 first (the deploy is unblocked by the crash fix in commit `dc8fe0c`, but the cast test may still hit the hidden-cast-button bug). Then run Phase 6 here as the first player pass, then continue Phases 1–5 (the buffer-preset dialog / three-state overlay / settings) as originally planned.

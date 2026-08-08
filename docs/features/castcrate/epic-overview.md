@@ -2,7 +2,7 @@
 
 **Epic:** castcrate
 **Status:** 🟡 In Progress
-**Last Updated:** 2026-08-07
+**Last Updated:** 2026-08-08
 
 > **This file is the epic marker.** Its presence in `docs/features/castcrate/` tells every Beast Mode command that this folder is an **epic**, not a plain feature. Castcrate is currently organised as a single umbrella epic containing every feature in the project — see Purpose for the rationale (and non-rationale) of that choice.
 
@@ -43,7 +43,9 @@ The full set of features that make up castcrate. Grouped by theme for readabilit
 | 16 | chromecast | 🟡 In Progress | 10/18 (56%) | Chromecast device discovery & session |
 | 17 | cast-controls | 🟡 In Progress | 15/25 (60%) | Play/pause/seek/volume for active cast |
 | — | **Ops** | | | |
-| 18 | media-mac-deploy | 🟡 In Progress | 0/47 (0%) | Runbook — deploy CastCrate onto the dedicated 2011 MBP media box (Ubuntu 26.04) |
+| 18 | media-mac-deploy | 🟡 In Progress | 33/47 (70%) | Runbook — deploy CastCrate onto the dedicated 2011 MBP media box (Ubuntu 26.04) |
+| — | **Discovery (planned)** | | | |
+| 19 | tmdb-metadata | 🔵 Planned | — | Add TMDB as a metadata provider alongside OMDb (backdrops, better TV data, richer search) — inspired by Jellyfin |
 
 > Reference any feature with `castcrate/<feature-name>` (e.g. `/proceed castcrate/stremio-addon-source`, `/continue-feature castcrate/hardening`). Bare names still resolve via fuzzy fallback (e.g. `/continue-feature discovery` → `castcrate/discovery`). Task counts are pulled from each feature's `tasks.md` and refreshed by `/update-epic`.
 
@@ -59,6 +61,7 @@ Most features are already in progress or complete and were built independently b
 4. **proxy-routing / transcoding / subtitles / player-buffer-ux** — the streaming pipeline.
 5. **chromecast / cast-controls** — final output to the TV.
 6. **media-mac-deploy** — one-off runbook to deploy the epic onto dedicated hardware; runs independent of code progress and can be executed once code is casting cleanly.
+7. **tmdb-metadata** — additive metadata provider improvement; can be planned/built any time after the current player-buffer-ux fix pass, no hard dependency on the deploy.
 
 **Dependencies between features:**
 - Torrent sources (8–11) all feed into `proxy-routing` (12).
@@ -86,8 +89,8 @@ Cross-feature tech debt and review findings. **Populated and updated by `/review
 
 ## Master Overview Rollup
 
-- **Rollup status:** In Progress (1/18 features complete — hardening; 260/463 tasks ≈ 56%)
-- **One-line summary for master:** Self-hosted cast/stream box — discovery, torrent sources, playback pipeline, Chromecast output, and dedicated-hardware deploy runbook, currently structured as one umbrella epic.
+- **Rollup status:** In Progress (1/19 features complete — hardening; 293/463 tasks ≈ 63%, tmdb-metadata unstarted). Player-buffer-ux gained a Phase 6 overlay-layering fix pass (adds ~9 tasks) to close the three bugs found during the media-mac-deploy P5.7 cast test.
+- **One-line summary for master:** Self-hosted cast/stream box — discovery, torrent sources, playback pipeline, Chromecast output, dedicated-hardware deploy runbook, and TMDB metadata pass (planned).
 
 ---
 

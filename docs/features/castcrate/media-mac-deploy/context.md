@@ -60,6 +60,13 @@ Running notes / decisions / surprises from executing the runbook. Grow this as t
 - **DHCP reservation (3.7) deferred** until box moves to its permanent ethernet port.
 - **SSH auth:** password auth is on (was needed after the GitHub key import mismatch on the second install). Consider adding the main-laptop pubkey to `~/.ssh/authorized_keys` on the box later so we can turn password auth off.
 
+### 2026-08-08 — Phase 6 in progress + one crash bug fixed en route
+
+- **6.1 systemd unit written** (heredoc paste got mangled first attempt — bash's `>` PS2 was waiting for the closing `UNIT` marker; second attempt via `sudo nano` succeeded). Learning for future runbooks: **prefer `nano`-created files over heredoc `sudo tee` for anything longer than ~10 lines** on macOS Terminal.app SSH sessions, which have unreliable paste for large blocks.
+- **6.2/6.3 enable + verify** — service active, PID 3275, ~44 MB RSS, listening on both 127.0.0.1:3000 and 192.168.1.249:3000.
+- **⚠️ Crash bug found and fixed mid-Phase 6:** browser-side "very high buffering" was actually the service crash-looping every ~50s. Root cause: `DELETE /api/torrent/:hash` calls `webtorrent.remove()` on already-removed torrents, and webtorrent v2 throws synchronously; the throw escaped the callback wrapper → unhandled rejection → process exit → systemd restart. Fix in `apps/server/src/services/torrent.ts` short-circuits when `client.get(infoHash)` returns null; committed `dc8fe0c`, pushed. Pull + rebuild + restart in progress on the media Mac.
+- **Player UX bugs from P5.7** now formally planned as **Phase 6 of `castcrate/player-buffer-ux`** (see that feature's `implementation.md` → "Overlay layering fix pass" and `tasks.md` → Phase 6). Approach borrowed from Jellyfin's `jellyfin-web` player architecture (portal + z-index + `pointer-events` — reimplemented, not copied; Jellyfin is GPLv2).
+
 ### 2026-08-08 — Phase 5.7 manual test PASSED (with player UX findings)
 
 - CastCrate reachable at `http://192.168.1.249:3000` from the main laptop.

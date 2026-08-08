@@ -1,7 +1,7 @@
 # media-mac-deploy — Tasks
 
 **Last updated:** 2026-08-07
-**Progress:** 29/47 — Phase 5 in progress (5.1–5.7 ✅ ; manual test passed, 3 player UX bugs logged against player-buffer-ux for later)
+**Progress:** 33/47 — Phase 6 in progress (6.1–6.3 ✅ systemd unit live; 6.4 real Chromecast test in flight; 6.5/6.6 reboot + re-test pending). One server crash bug (`webtorrent.remove()` throws on missing torrent) fixed in-flight; committed `dc8fe0c`, pushed. Player UX bugs found during 5.7 now formally planned as **Phase 6 of `castcrate/player-buffer-ux`** (overlay layering fix pass, Jellyfin-inspired).
 
 Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick items as you complete them; update the "Last updated" date each session and ping me with what you did (and any surprises) so I can help debug.
 
@@ -69,7 +69,7 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 - [x] **5.5** `mkdir -p ~/castcrate-downloads`.
 - [x] **5.6** `cp .env.example apps/server/.env`, then edit and set: `OMDB_API_KEY`, `PORT=3000`, `DOWNLOAD_PATH=/home/castcrate/castcrate-downloads`, keep `BUFFER_PERCENT=2` / `TRANSCODE_BUFFER_PERCENT=5` / `TRANSCODE_BITRATE=5M`.
 - [x] **5.7** Manual test: `pnpm --filter @castcrate/server start`; from your laptop open `http://castcrate.local:3000`; verify the UI loads and OMDb search returns results. **✅ Matrix played end-to-end; 3 player UX bugs (buffer-bar-won't-dismiss, cast button hidden, captions button hidden — z-index/stacking) logged to `player-buffer-ux/context.md`, deferred until after Phase 7.**
-- [ ] **5.8** `Ctrl+C` to stop the manual server.
+- [x] **5.8** `Ctrl+C` to stop the manual server.
 
 **Acceptance:** UI loads on another LAN device; OMDb search returns metadata; at least one torrent source returns a magnet for a well-seeded title. ✅ (2026-08-08)
 
@@ -77,9 +77,9 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 
 ## Phase 6 — Autostart via systemd (~20 min)
 
-- [ ] **6.1** Create `/etc/systemd/system/castcrate.service` with `ExecStart=/usr/bin/node /home/castcrate/castcrate/apps/server/dist/index.js`, `EnvironmentFile=/home/castcrate/castcrate/apps/server/.env`, `User=castcrate`, `Restart=on-failure`, hardening (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=read-only`, `ReadWritePaths=/home/castcrate/castcrate-downloads`).
-- [ ] **6.2** `sudo systemctl daemon-reload && sudo systemctl enable --now castcrate`.
-- [ ] **6.3** `systemctl status castcrate` shows `active (running)`; `journalctl -u castcrate -n 50` looks clean.
+- [x] **6.1** Create `/etc/systemd/system/castcrate.service` with `ExecStart=/usr/bin/node /home/castcrate/castcrate/apps/server/dist/index.js`, `EnvironmentFile=/home/castcrate/castcrate/apps/server/.env`, `User=castcrate`, `Restart=on-failure`, hardening (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=read-only`, `ReadWritePaths=/home/castcrate/castcrate-downloads`).
+- [x] **6.2** `sudo systemctl daemon-reload && sudo systemctl enable --now castcrate`.
+- [x] **6.3** `systemctl status castcrate` shows `active (running)`; `journalctl -u castcrate -n 50` looks clean.
 - [ ] **6.4** End-to-end cast test: from a phone/laptop → `http://castcrate.local:3000` → search a real title → pick a release → cast to the Chromecast → playback starts on the TV.
 - [ ] **6.5** Reboot the box (`sudo reboot`); wait 1 min; SSH back in; `systemctl status castcrate` is already `active` without any manual start.
 - [ ] **6.6** Repeat the cast test once more after the reboot to prove it's reproducible.
