@@ -60,6 +60,13 @@ Running notes / decisions / surprises from executing the runbook. Grow this as t
 - **DHCP reservation (3.7) deferred** until box moves to its permanent ethernet port.
 - **SSH auth:** password auth is on (was needed after the GitHub key import mismatch on the second install). Consider adding the main-laptop pubkey to `~/.ssh/authorized_keys` on the box later so we can turn password auth off.
 
+### 2026-08-08 — Phase 5.7 manual test PASSED (with player UX findings)
+
+- CastCrate reachable at `http://192.168.1.249:3000` from the main laptop.
+- Search "The Matrix" → OMDb metadata + releases returned → played the movie in-browser end-to-end. Streaming pipeline (webtorrent → transcode → HTTP-range) works.
+- **Player UX bugs found and logged into `castcrate/player-buffer-ux/context.md`** (buffer bar won't dismiss; cast + captions buttons hidden behind the video element — z-index/stacking issue). Deferred until after Phase 7.
+- Deploy proceeds: Ctrl+C the server, move to Phase 6 (systemd), then Phase 7 (prune), then circle back to fix the player UX.
+
 ### Template
 
 

@@ -1,7 +1,7 @@
 # media-mac-deploy — Tasks
 
 **Last updated:** 2026-08-07
-**Progress:** 18/47 — Phase 3 done except deferred 3.7 (DHCP); Phase 4 next (Node runtime)
+**Progress:** 29/47 — Phase 5 in progress (5.1–5.7 ✅ ; manual test passed, 3 player UX bugs logged against player-buffer-ux for later)
 
 Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick items as you complete them; update the "Last updated" date each session and ping me with what you did (and any surprises) so I can help debug.
 
@@ -51,27 +51,27 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 
 ## Phase 4 — Node runtime (~15 min)
 
-- [ ] **4.1** Install Node 22 via NodeSource: `curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs`.
-- [ ] **4.2** If NodeSource complains about 26.04/plucky, edit `/etc/apt/sources.list.d/nodesource.list` and change the codename to `noble`; re-run `sudo apt install -y nodejs`.
-- [ ] **4.3** Enable corepack + pin pnpm: `sudo corepack enable && corepack prepare pnpm@11.0.8 --activate`.
-- [ ] **4.4** Sanity check: `node -v` (v22.x), `pnpm -v` (11.0.8), `ffmpeg -version`.
+- [x] **4.1** Install Node 22 via NodeSource: `curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs`.
+- [x] **4.2** If NodeSource complains about 26.04/plucky, edit `/etc/apt/sources.list.d/nodesource.list` and change the codename to `noble`; re-run `sudo apt install -y nodejs`. **(N/A — NodeSource uses `nodistro/main`, no codename issue)**
+- [x] **4.3** Enable corepack + pin pnpm: `sudo corepack enable && corepack prepare pnpm@11.0.8 --activate`.
+- [x] **4.4** Sanity check: `node -v` (v22.x), `pnpm -v` (11.0.8), `ffmpeg -version`.
 
-**Acceptance:** all three version commands print clean output.
+**Acceptance:** all three version commands print clean output. ✅ (2026-08-08 — v22.23.2 / 11.0.8 / ffmpeg 8.0.1)
 
 ---
 
 ## Phase 5 — Deploy CastCrate (~30 min)
 
-- [ ] **5.1** `cd ~ && git clone https://github.com/DJStarmallama/castcrate.git && cd castcrate`.
-- [ ] **5.2** `pnpm install` (pulls webtorrent, castv2-client, etc.).
-- [ ] **5.3** `pnpm --filter @castcrate/server build` (TS → dist/).
-- [ ] **5.4** `pnpm --filter @castcrate/web build` (Vite prod bundle).
-- [ ] **5.5** `mkdir -p ~/castcrate-downloads`.
-- [ ] **5.6** `cp .env.example apps/server/.env`, then edit and set: `OMDB_API_KEY`, `PORT=3000`, `DOWNLOAD_PATH=/home/castcrate/castcrate-downloads`, keep `BUFFER_PERCENT=2` / `TRANSCODE_BUFFER_PERCENT=5` / `TRANSCODE_BITRATE=5M`.
-- [ ] **5.7** Manual test: `pnpm --filter @castcrate/server start`; from your laptop open `http://castcrate.local:3000`; verify the UI loads and OMDb search returns results.
+- [x] **5.1** `cd ~ && git clone https://github.com/DJStarmallama/castcrate.git && cd castcrate`. **(repo made public to skip PAT/SSH auth)**
+- [x] **5.2** `pnpm install` (pulls webtorrent, castv2-client, etc.).
+- [x] **5.3** `pnpm --filter @castcrate/server build` (TS → dist/).
+- [x] **5.4** `pnpm --filter @castcrate/web build` (Vite prod bundle).
+- [x] **5.5** `mkdir -p ~/castcrate-downloads`.
+- [x] **5.6** `cp .env.example apps/server/.env`, then edit and set: `OMDB_API_KEY`, `PORT=3000`, `DOWNLOAD_PATH=/home/castcrate/castcrate-downloads`, keep `BUFFER_PERCENT=2` / `TRANSCODE_BUFFER_PERCENT=5` / `TRANSCODE_BITRATE=5M`.
+- [x] **5.7** Manual test: `pnpm --filter @castcrate/server start`; from your laptop open `http://castcrate.local:3000`; verify the UI loads and OMDb search returns results. **✅ Matrix played end-to-end; 3 player UX bugs (buffer-bar-won't-dismiss, cast button hidden, captions button hidden — z-index/stacking) logged to `player-buffer-ux/context.md`, deferred until after Phase 7.**
 - [ ] **5.8** `Ctrl+C` to stop the manual server.
 
-**Acceptance:** UI loads on another LAN device; OMDb search returns metadata; at least one torrent source returns a magnet for a well-seeded title.
+**Acceptance:** UI loads on another LAN device; OMDb search returns metadata; at least one torrent source returns a magnet for a well-seeded title. ✅ (2026-08-08)
 
 ---
 

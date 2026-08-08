@@ -1,7 +1,7 @@
 # player-buffer-ux — Context
 
-**Last updated:** 2026-05-16
-**Status:** Spec / not started (quick-fix overlay landed as commit `a764daa`)
+**Last updated:** 2026-08-08
+**Status:** Spec / not started (quick-fix overlay landed as commit `a764daa`) — **new production bugs found 2026-08-08 during castcrate/media-mac-deploy P5.7, see "Bugs found in production testing" at bottom of this file**
 
 ## Problem
 
