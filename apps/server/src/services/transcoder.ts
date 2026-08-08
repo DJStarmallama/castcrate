@@ -64,6 +64,12 @@ export function spawnTranscode(source: Readable): TranscodeHandle {
     "-c:a", "aac",
     "-b:a", "192k",
     "-ac", "2",
+    // EBU R128 loudness normalization. YTS/x264 releases often mix dialogue
+    // 10-15 LUFS below streaming platforms; this brings them into line with
+    // Netflix/YouTube (-14 to -16 LUFS integrated) so cast volume feels normal
+    // at typical TV levels. Single-pass streaming mode — no two-pass measure
+    // step, applies rolling dynamic gain in real time.
+    "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
