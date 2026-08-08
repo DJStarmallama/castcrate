@@ -115,6 +115,26 @@ Systemd restarted (PID 3610 → 3802). The Interstellar test then ran on the fre
 
 **Also newly logged (P5 code bug, follow-up):** `POST /api/torrent/start` returns 200 even when webtorrent's `client.add()` never actually completes / fails silently. The route should surface this as a 502 (or wait on the `ready`/`error` event before returning success), otherwise the client thinks the torrent started when it didn't. Not the deploy blocker (CGNAT is), but a worthwhile server-side hardening task — should be planned as its own small feature or folded into `hardening` v2.
 
+> **⚠️ SUPERSEDED by the "Root cause found" entry below.** Both the "Starlink CGNAT peer starvation" diagnosis and the "`start` returns 200 optimistically" follow-up were wrong. See the next entry for what was actually happening.
+
+### 2026-08-08 — Root cause found: systemd sandbox blocked the write path (NOT CGNAT)
+
+The "Starlink CGNAT peer-starvation" diagnosis in the previous entry was **wrong**. Root cause was a stray tilde in the box's `.env`: `DOWNLOAD_PATH=~/home/castcrate/castcrate-downloads`. `config.ts:14` runs `expandTilde()` on the value, resolving it to `/home/castcrate/home/castcrate/castcrate-downloads` — outside the systemd unit's `ReadWritePaths=/home/castcrate/castcrate-downloads`. `ProtectHome=read-only` blocked the first-piece flush → webtorrent tore the torrent down → status went 404 → `/stream` timed out at 30 s. Physical proof: **1.9 GB of "The Matrix (1999) [1080p]"** sitting at the wrong path from the P5.7 manual test — which passed *because* it ran outside systemd, where `/home` was writable. "Works manually, fails under systemd" was the tell.
+
+**Peer connectivity is fine on this network.** Polling every 5 s during a live start (before the write failure killed the torrent) showed **33 peers @ 1.09 MB/s at t=10s**; Interstellar swarm metadata resolved in 1.4 s with an empty download dir. After the `.env` tilde was fixed and the service restarted: `/stream` returns **206 Partial Content in 17 ms**, sustains **11.7 MB/s over 49 peers**. Streaming works over Starlink CGNAT with **no proxy, no IPv6, no VPN**. The "Two independent fixes now required" plan in the previous entry — specifically Step 2 (CGNAT bypass via SOCKS5 / IPv6 / VPN) — is chasing a non-problem. **Dropped.**
+
+**Crash fix `4cb84d9` confirmed under real load** — DELETE issued against a *live* torrent, twice: PID stable, `NRestarts=0`, zero crashes, zero `No torrent with id`.
+
+**Three source bugs found and fixed (commit `1d65f44`):**
+
+- **Bug A (HIGH)** — post-`ready` torrent errors silently swallowed. `startTorrent`'s `torrent.once("error", ...)` handler only rejects the setup promise; after `finalize()` fires on 'ready', the reject is a no-op. Runtime failures (like the EROFS write above) produced **zero** journal output — this is why three sessions blamed the network instead of the disk. Fix: `torrent.on` + unconditional `console.error`.
+- **Bug B (LOW)** — `.env.example` shipped `DOWNLOAD_PATH=~/Downloads/LlamaSpitStream`. Fine under a shell, silently hostile under systemd (`EnvironmentFile=` does not expand tildes). Added warning comments plus a parallel `HISTORY_DIR` block.
+- **Bug C (HIGH)** — `DELETE /api/torrent/:hash` was leaking torrents. `history.ts` hardcoded `join(homedir(), ".castcrate")` — outside the sandbox's `ReadWritePaths` → ENOENT on mkdir → 500. The route wrote history **before** calling `removeTorrent()`, so the throw skipped removal entirely and the torrent kept downloading forever (unbounded bandwidth + disk). Fix: honor `HISTORY_DIR` env, reorder to `removeTorrent()` first + history in its own try/catch that logs + swallows.
+
+**Common shape of all three bugs:** a write path outside the sandbox's `ReadWritePaths`, with the error swallowed before reaching the journal. Bug A is the leverage fix — it's what turns the next instance of this from a day of guesswork into a minute of `grep`.
+
+**Deploy state:** 6.4's crash-fix half is done. Cast test (6.4) still blocked only by player z-index bugs (`castcrate/player-buffer-ux` Phase 6) and needing a real Chromecast. The whole CGNAT bypass workstream is dropped from scope.
+
 ### Template
 
 
@@ -147,5 +167,7 @@ Systemd restarted (PID 3610 → 3802). The Interstellar test then ran on the fre
 - **Password auth over SSH may be off after Ubuntu installer imports a GitHub key.** Symptom: `Permission denied (publickey)` even with the correct password. Fix at the physical console: `sudo sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf && sudo systemctl restart ssh`.
 - **CastCrate DELETE crash + peer-starvation combo can masquerade as "buffering".** Under systemd `Restart=on-failure`, a crash-loop looks like intermittent slowness to the browser client. Always check `journalctl -u castcrate | grep -c "Main process exited"` before assuming a client-side or network issue.
 - **`/api/torrent/:hash/files` returns `200 []` when the torrent is gone.** Only `/api/torrent/:hash` (status) returns a definitive 404 when webtorrent has no such torrent. Don't use `/files` as a liveness check.
-- **Starlink is CGNAT — BitTorrent peer connectivity is severely degraded.** Torrents that should have 3,000+ seeders fetch zero bytes in 30s. The `first-byte timeout` (hardening feature) fires. Mitigations: SOCKS5 proxy via `PROXY_URL`, Starlink IPv6 mode, or a full VPN. **Any home-network CastCrate deploy behind CGNAT (Starlink, T-Mobile Home Internet, some 4G/5G ISPs) needs this treatment.**
-- **`POST /api/torrent/start` returns 200 optimistically** — even when webtorrent's `client.add()` never actually joins any peers. Response is not a liveness proof; the follow-up status poll (which returns 404 quickly) is the real signal. Server-side follow-up: gate the 200 on a `ready` event or first tracker response.
+- **Starlink CGNAT does NOT block BitTorrent on this network.** The earlier entry that pinned peer-starvation on CGNAT was wrong — sustained 11.7 MB/s over 49 peers once the real bug (sandbox blocking the write path) was fixed. **CGNAT is a very tempting scapegoat when torrents look dead; check the write path first.**
+- **systemd `EnvironmentFile=` does NOT expand `~`.** A `.env` line like `DOWNLOAD_PATH=~/foo` is fine under a shell but under systemd resolves through `config.ts::expandTilde()` to `<cwd>/~/foo` — outside `ReadWritePaths`, blocked by `ProtectHome=read-only`, torrents die silently on the first piece flush. Use absolute paths in any `.env` a systemd unit will load, and make `ReadWritePaths=` match the *expanded* path exactly.
+- **`~/.castcrate` is unwritable under `ProtectHome=read-only`.** The old `history.ts` hardcoded that path and 500'd on every DELETE. Set `HISTORY_DIR=` (env) to a path inside `ReadWritePaths=` — or use systemd `StateDirectory=castcrate` which hands you `/var/lib/castcrate` for free and adds it to `ReadWritePaths` automatically.
+- **Sandboxed write failures show up as "network problems" if the error handler doesn't log.** Bug A (torrent runtime-error swallow) is what let the tilde bug hide as CGNAT for three sessions. When post-'ready' errors reach `console.error`, `journalctl -u castcrate | grep -i EROFS` finds the real cause in seconds.
