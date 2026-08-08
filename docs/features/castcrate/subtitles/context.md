@@ -39,3 +39,7 @@
 - **Subtitle file isn't priority-bumped** in WebTorrent — user sees "no tracks" until normal download reaches it.
 - **No runtime multi-track switching.** Stop + replay to change.
 - **VTT line endings are LF.** Some legacy Chromecast firmware prefers CRLF.
+- **Subtitle picker is a no-op during an active cast session.** `SubtitlePicker.onSelect` only sets local React state, which drives the local `<video>`'s `<track>`. The Chromecast session was configured with its subtitle (or none) at `castPlay` time and there's no route to change it mid-flight. **Options for the fix:**
+  1. **Enumerate all tracks upfront** at cast start, pass them all to the receiver, then swap `activeTrackIds` via `EDIT_TRACKS_INFO` message (no restart, no blip). Requires the tracks to exist on disk before cast start; today only the one selected in the picker is passed.
+  2. **Reload the media** with the new subtitle (uses existing `load()` codepath). Simple, but causes a brief playback interruption + loses seek position unless we re-seek immediately.
+  Wiring: SubtitlePicker needs to know about `castSessionId`; when set, call a new `POST /api/cast/sessions/:id/subtitle` instead of just setting local state. Reported by user during `castcrate/media-mac-deploy` P6.4 cast test — "Wish I could trigger subtitles whilst its casting."
