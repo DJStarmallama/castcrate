@@ -1,7 +1,7 @@
 # media-mac-deploy — Tasks
 
 **Last updated:** 2026-08-07
-**Progress:** 33/47 — Phase 6 in progress (6.1–6.3 ✅ systemd unit live; 6.4 real Chromecast test in flight; 6.5/6.6 reboot + re-test pending). One server crash bug (`webtorrent.remove()` throws on missing torrent) fixed in-flight; committed `dc8fe0c`, pushed. Player UX bugs found during 5.7 now formally planned as **Phase 6 of `castcrate/player-buffer-ux`** (overlay layering fix pass, Jellyfin-inspired).
+**Progress:** 33/47 — Phase 6 in progress. 6.1–6.3 ✅ systemd unit live. Cast test (6.4) blocked by (a) player UX z-index bugs — planned as `castcrate/player-buffer-ux` Phase 6 — and (b) confirmed **Starlink CGNAT peer-starvation** during retest: `/stream` 504s for both Matrix and Interstellar (Interstellar is the seeder-rich reference test, so this is environmental, not release-specific). Server crash bug fixed on GitHub (`dc8fe0c`) but the media Mac still needs `git pull && pnpm build && systemctl restart` to actually deploy it (previous "restart only" left the old dist in place, so the crash re-fired). See `context.md` → 2026-08-08 correction entry for the corrected diagnosis and the two-step fix plan (deploy crash fix + bypass CGNAT via `PROXY_URL` SOCKS5 or Starlink IPv6).
 
 Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick items as you complete them; update the "Last updated" date each session and ping me with what you did (and any surprises) so I can help debug.
 
