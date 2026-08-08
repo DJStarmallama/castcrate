@@ -39,8 +39,7 @@ interface WtClient {
   remove(
     infoHash: string,
     opts: { destroyStore?: boolean },
-    cb?: (err?: Error) => void,
-  ): void;
+  ): Promise<void>;
   destroy(cb?: () => void): void;
   torrents: WtTorrent[];
 }
@@ -291,15 +290,20 @@ export async function removeTorrent(
 ): Promise<void> {
   const client = await getClient();
   meta.delete(infoHash);
-  // webtorrent v2 throws synchronously ("No torrent with id ...") when the
-  // torrent isn't in the client anymore. That throw escapes the callback
-  // wrapper and crashes the process. Short-circuit so DELETE is idempotent.
-  if (!client.get(infoHash)) return;
-  return new Promise((resolve, reject) => {
-    client.remove(infoHash, { destroyStore: opts.destroyStore }, (err) =>
-      err ? reject(err) : resolve(),
-    );
-  });
+  try {
+    // webtorrent v2's remove() is async and rejects with "No torrent with
+    // id ..." when the torrent is already gone. That rejection is on the
+    // returned promise (separate from the optional callback) so wrapping
+    // in a callback-form Promise executor lets it escape as an unhandled
+    // rejection and crashes the process. await + swallow that one error
+    // to keep DELETE idempotent.
+    await client.remove(infoHash, { destroyStore: opts.destroyStore });
+  } catch (err) {
+    if (err instanceof Error && /No torrent with id/i.test(err.message)) {
+      return;
+    }
+    throw err;
+  }
 }
 
 export async function shutdown(): Promise<void> {
