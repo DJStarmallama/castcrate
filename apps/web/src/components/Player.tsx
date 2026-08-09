@@ -7,6 +7,14 @@ import { CastBar } from "./CastBar";
 import { CastControls } from "./CastControls";
 import { SubtitlePicker } from "./SubtitlePicker";
 import { useLocalState } from "../hooks/useLocalState";
+import {
+  DEAD_SWARM_THRESHOLD_MS,
+  isBufferingState,
+  isInitialState,
+  isStalledState,
+  useBufferState,
+  type BufferState,
+} from "../hooks/useBufferState";
 import { SMOOTH_PLAYBACK_KEY } from "./Settings";
 
 interface Props {
@@ -40,11 +48,10 @@ export function Player({ movie, session, onClose }: Props) {
   // produce a nonsense URL pointing at the CDN.
   const playUrl = useTranscode ? `${session.streamUrl}/transcoded` : session.streamUrl;
 
-  // Track whether the video element has reported it can play smoothly.
-  // While not yet playing, poll fast so the buffer % updates feel live;
-  // once playing, back off so we don't hammer the server.
-  const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
-  const [videoBuffering, setVideoBuffering] = useState(false);
+  // Explicit buffering state machine — see `hooks/useBufferState.ts`. HTTP
+  // streams never dispatch, so the state sits at its initial value and the
+  // render site's `isHttpStream` guard suppresses the overlay.
+  const { state: bufferState, dispatch: dispatchBuffer } = useBufferState();
 
   const status = useQuery({
     queryKey: ["torrent-status", session.infoHash],
@@ -52,9 +59,9 @@ export function Player({ movie, session, onClose }: Props) {
     queryFn: () => api.torrentStatus(session.infoHash!),
     refetchInterval: (q) => {
       if (q.state.data?.done) return false;
-      // Fast polling during early buffering or when the video element is
-      // currently waiting for data; slower once playback is stable.
-      if (!hasPlayedOnce || videoBuffering) return 1500;
+      // Fast polling while in any buffering-flavored state so the buffer %
+      // updates feel live; slower once playback is stable.
+      if (isBufferingState(bufferState)) return 1500;
       return 10_000;
     },
     enabled: !closing && !isHttpStream,
@@ -85,8 +92,13 @@ export function Player({ movie, session, onClose }: Props) {
   const files = filesQ.data?.files ?? [];
   const showFilePicker = files.length > 1;
 
-  // Detect a stalled stream — progress hasn't budged in STALL_THRESHOLD_MS
-  // while still downloading. Used in the footer to surface "no peers" UX.
+  // Detect a stalled stream — progress hasn't budged in
+  // DEAD_SWARM_THRESHOLD_MS while still downloading. Feeds the buffer state
+  // machine so the overlay switches to "Waiting for peers…". Fires on every
+  // poll while the condition holds so the state machine has fresh context
+  // if the video later drops back into `buffering` (a stall latched while
+  // in `playing` is a no-op, but a stall still in effect when `waiting`
+  // arrives should immediately move us to `stalled` not `buffering`).
   const lastProgressRef = useRef<{ value: number; time: number }>({
     value: 0,
     time: Date.now(),
@@ -99,13 +111,18 @@ export function Player({ movie, session, onClose }: Props) {
     if (data.progress !== lastProgressRef.current.value) {
       lastProgressRef.current = { value: data.progress, time: now };
       if (stalled) setStalled(false);
+      dispatchBuffer({ type: "recovered" });
     } else if (
       !data.done &&
-      now - lastProgressRef.current.time > STALL_THRESHOLD_MS
+      now - lastProgressRef.current.time > DEAD_SWARM_THRESHOLD_MS
     ) {
       if (!stalled) setStalled(true);
+      dispatchBuffer({
+        type: "stall_detected",
+        sinceMs: now - lastProgressRef.current.time,
+      });
     }
-  }, [status.data, stalled]);
+  }, [status.data, stalled, dispatchBuffer]);
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
@@ -123,32 +140,26 @@ export function Player({ movie, session, onClose }: Props) {
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
-  // Track the local <video> element's playback readiness so we can show
-  // a buffering overlay during the initial peer-warmup phase and whenever
-  // the browser exhausts its buffer mid-play.
-  //
-  // hasPlayedOnce doubles as the overlay-dismiss latch. Setting it only on
-  // `playing` leaves the overlay stuck when the browser blocks autoplay —
-  // `playing` never fires until the user clicks the native play button, and
-  // the overlay covers the click area. Treat `canplay` (video has enough
-  // data to play) as "buffer job done" for overlay purposes.
+  // Bridge the <video> element's readiness events into the buffer state
+  // machine. `canplay` is preferred as the overlay-dismiss trigger because
+  // Chrome's autoplay policy can suppress `playing` until the user clicks —
+  // and the overlay covers the click area, so relying on `playing` alone
+  // left the overlay stuck (fixed as part of Phase 6).
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const markReady = () => {
-      setVideoBuffering(false);
-      setHasPlayedOnce(true);
-    };
-    const onWaiting = () => setVideoBuffering(true);
-    v.addEventListener("playing", markReady);
-    v.addEventListener("canplay", markReady);
+    const onCanPlay = () => dispatchBuffer({ type: "buffered" });
+    const onPlaying = () => dispatchBuffer({ type: "playing" });
+    const onWaiting = () => dispatchBuffer({ type: "waiting" });
+    v.addEventListener("playing", onPlaying);
+    v.addEventListener("canplay", onCanPlay);
     v.addEventListener("waiting", onWaiting);
     return () => {
-      v.removeEventListener("playing", markReady);
-      v.removeEventListener("canplay", markReady);
+      v.removeEventListener("playing", onPlaying);
+      v.removeEventListener("canplay", onCanPlay);
       v.removeEventListener("waiting", onWaiting);
     };
-  }, [playUrl]);
+  }, [playUrl, dispatchBuffer]);
 
   // 'F' shortcut toggles fullscreen
   useEffect(() => {
@@ -289,13 +300,12 @@ export function Player({ movie, session, onClose }: Props) {
                 />
               )}
             </video>
-            {!isHttpStream && (videoBuffering || !hasPlayedOnce) && status.data && !status.data.done && (
+            {!isHttpStream && isBufferingState(bufferState) && status.data && !status.data.done && (
               <BufferingOverlay
                 progress={status.data.progress}
                 speed={status.data.downloadSpeed}
                 peers={status.data.numPeers}
-                stalled={stalled}
-                initial={!hasPlayedOnce}
+                state={bufferState}
               />
             )}
           </>
@@ -363,15 +373,15 @@ function BufferingOverlay({
   progress,
   speed,
   peers,
-  stalled,
-  initial,
+  state,
 }: {
   progress: number;
   speed: number;
   peers: number;
-  stalled: boolean;
-  initial: boolean;
+  state: BufferState;
 }) {
+  const stalled = isStalledState(state);
+  const initial = isInitialState(state);
   const pct = Math.round(progress * 100 * 10) / 10;
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55 backdrop-blur-sm">
@@ -409,8 +419,6 @@ function BufferingOverlay({
     </div>
   );
 }
-
-const STALL_THRESHOLD_MS = 10_000;
 
 // Codecs the Chromecast Default Media Receiver can't play directly. When we
 // detect one, route through the ffmpeg transcoder pipeline by default.

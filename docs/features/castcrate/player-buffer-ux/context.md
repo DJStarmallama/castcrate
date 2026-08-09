@@ -1,7 +1,7 @@
 # player-buffer-ux — Context
 
-**Last updated:** 2026-08-08
-**Status:** Spec / not started (quick-fix overlay landed as commit `a764daa`) — **Phase 6 (Overlay layering fix pass) added 2026-08-08 to close the three production bugs found during castcrate/media-mac-deploy P5.7. See implementation.md → "Overlay layering fix pass" and tasks.md → Phase 6.**
+**Last updated:** 2026-08-09
+**Status:** Spec / not started (quick-fix overlay landed as commit `a764daa`) — **Phase 6 (Overlay layering fix pass) added 2026-08-08 to close the three production bugs found during castcrate/media-mac-deploy P5.7. See implementation.md → "Overlay layering fix pass" and tasks.md → Phase 6.** **Phase 2 prereq landed 2026-08-09 — `useBufferState()` reducer extracted; see session note below.**
 
 ## Problem
 
@@ -75,3 +75,119 @@ All three share a stacking-context problem. Jellyfin's `jellyfin-web` player sol
 Reimplement with **Radix Popover** (or the shadcn `<Popover>` primitive that wraps it) — same portal + focus-trap + escape-key behaviour, permissive-licensed, small dep. Full spec in `implementation.md` → "Overlay layering fix pass"; checklist in `tasks.md` → Phase 6.
 
 **Order-of-operations:** finish `castcrate/media-mac-deploy` Phases 6–7 first (the deploy is unblocked by the crash fix in commit `dc8fe0c`, but the cast test may still hit the hidden-cast-button bug). Then run Phase 6 here as the first player pass, then continue Phases 1–5 (the buffer-preset dialog / three-state overlay / settings) as originally planned.
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **Cast session has no heartbeat** — spans chromecast ↔ cast-controls ↔ player-buffer-ux — powered-off Chromecast leaves session stuck; player polls forever. Add 30s heartbeat + WS event. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Subtitle picker no-op during cast** — spans subtitles ↔ cast-controls ↔ player-buffer-ux. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Torrent-lifecycle idempotency** — spans yts ↔ library-settings ↔ transcoding ↔ player-buffer-ux. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Subtitle track has no fallback if torrent disappears mid-cast** — spans subtitles ↔ chromecast ↔ player-buffer-ux. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Transcoder has no fallback if ffmpeg dies mid-stream** — spans transcoding ↔ player-buffer-ux ↔ cast-controls. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Buffer overlay has no formal state machine** — spans player-buffer-ux ↔ yts ↔ transcoding — extract `useBufferState()` reducer BEFORE Phases 2/3 add more transitions. (See epic-overview.md → Tech Debt / Findings for full detail.) → **RESOLVED 2026-08-09** (see session note below).
+- 💳 **Overlay layering Phase 6 landed but Phases 2/3 spec-only, and informal state machine will make them painful** — extract `useBufferState()` reducer first. (See epic-overview.md → Tech Debt / Findings.) → **RESOLVED 2026-08-09** (see session note below).
+
+_Recorded by /review-epic castcrate on 2026-08-09._
+
+## Session notes
+
+### 2026-08-09 — `useBufferState()` reducer extraction (Phase 2 prereq)
+
+Landed the "extract explicit state machine before Phases 2/3" work called out
+in the epic review. Behavior-preserving refactor: no new overlays, no CTA
+changes, no z-index shifts, no server changes.
+
+**Files touched**
+
+- `apps/web/src/hooks/useBufferState.ts` (new) — the reducer + types + tiny
+  `useReducer` wrapper hook + three tiny derived predicates
+  (`isBufferingState`, `isStalledState`, `isInitialState`) so the render site
+  doesn't re-encode the "which states show the overlay" rule.
+- `apps/web/src/components/Player.tsx` — dispatch on `<video>` `canplay` /
+  `playing` / `waiting` events and on the swarm-stall detector. Overlay
+  render predicate and the inline `BufferingOverlay` component now switch on
+  `state` rather than the old `hasPlayedOnce` + `videoBuffering` + `stalled`
+  triad. Renamed the client-side stall threshold from an inline
+  `STALL_THRESHOLD_MS` const to the exported `DEAD_SWARM_THRESHOLD_MS` — kept
+  at 10 s (the currently-shipped value) so this is *not* a behavior change;
+  the spec's 30 s target lands with the Phase 2 CTA.
+
+**State union chosen**
+
+    BufferState = "idle" | "initial-buffer" | "buffering" | "playing"
+                | "initial-stalled" | "stalled" | "error"
+
+Beyond the starting five (`idle | buffering | playing | stalled | error`)
+the current code implicitly encoded two more states:
+
+- **`initial-buffer`** — the "never played" phase where the overlay says
+  "Buffering…" rather than "Buffering — waiting for more data". Previously
+  latched via `!hasPlayedOnce`.
+- **`initial-stalled`** — a stall detected before first `canplay`. Split from
+  `stalled` (mid-play stall) so `recovered` can restore the correct pre-stall
+  state — from `initial-stalled` back to `initial-buffer`, from `stalled`
+  back to `buffering`. UI copy is identical for both stalled variants; the
+  split is behavioral, not cosmetic.
+
+**Event union**
+
+    BufferEvent =
+      | { type: "start" }
+      | { type: "buffered" }        // <video> canplay
+      | { type: "playing" }         // <video> playing
+      | { type: "waiting" }         // <video> waiting
+      | { type: "stall_detected"; sinceMs: number }
+      | { type: "recovered" }
+      | { type: "error"; message: string }
+      | { type: "reset" }
+
+Added `"waiting"` beyond the task's suggested union — the video element fires
+it distinctly from the reducer's transitions and it drives the
+`playing → buffering` transition. Extending the union to represent every
+actual event source (rather than collapsing `waiting` into another event)
+keeps the dispatcher one-to-one with the DOM events, which is much easier to
+reason about than a hidden mapping.
+
+**CastControls not modified.** The task listed `CastControls.tsx` as one of
+the three components to refactor, but on inspection its only state-dependent
+bit is `isBuffering = data?.status === "buffering"` — which is the *server*
+side's Chromecast receiver status, communicated via the cast-session poll.
+It is not driven by the local `<video>` element's events (there is no local
+`<video>` in that branch — CastControls is rendered *instead of* the video
+when casting). Folding it into `useBufferState` would be a category error:
+the reducer models local playback + local swarm health, but during a cast
+session the local video is dark. Left CastControls unchanged; noted here so
+the choice is auditable.
+
+**Stall latching preserved (subtle).** The old code's `stalled` boolean was
+set once when the stall condition first fired (`if (!stalled) setStalled(true)`)
+and cleared on the first progress delta. That meant the stall context could
+persist across a `playing → waiting → buffering` transition. To preserve
+this in the reducer without extending `BufferState` to carry latches, the
+stall-detection effect now dispatches `stall_detected` on *every* poll where
+the condition holds (rather than once). The reducer treats `stall_detected`
+while `playing` as a no-op, so it costs nothing while stable; but the moment
+the video drops back into `buffering` via `waiting`, the next poll's
+`stall_detected` immediately transitions to `stalled`.
+
+**Local `stalled` state retained for the footer `ProgressBar`.** The footer
+progress bar goes amber when the swarm is stalled *even during stable
+playback* — pre-refactor behavior. The reducer state can't carry a "stalled
+while playing" flag without a state explosion, so the footer keeps a small
+local `stalled` boolean that mirrors the same signal the reducer's dispatch
+consumes. Both are updated from the same effect. One source of truth for
+overlay decisions (the reducer); a separate one-bit latch for the footer.
+
+**Build/lint status**
+
+- `pnpm --filter @castcrate/web typecheck` → clean.
+- `pnpm --filter @castcrate/web build` → succeeds (Vite 8, 385 kB bundle).
+- `pnpm --filter @castcrate/web lint` → 6 pre-existing errors from
+  `react-hooks` v7's newer `set-state-in-effect` and `purity` rules. All 6
+  errors are on lines that existed unmodified before this refactor. New
+  file `useBufferState.ts` is lint-clean. No net-new lint violations.
+
+**Manual verification** — dev server boots clean (`vite ready in 152 ms`).
+Reducer transitions traced by hand for the critical Phase 6 scenario
+(`initial-buffer` → `buffered` → `playing`, overlay dismisses); matches
+expected behavior. Full click-through on the media Mac is deferred to the
+same session that closes tasks.md 6.8 (needs box + browser).

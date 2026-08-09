@@ -1,7 +1,7 @@
 # player-buffer-ux — Tasks
 
-**Last updated:** 2026-08-08
-**Progress:** Quick-fix overlay shipped (commit `a764daa`); Phases 1–5 pending. **Phase 6 (Overlay layering fix pass): 5 of 9 done + 2 N/A** — surgical fix pass landed for the three P5.7 production bugs (buffer-bar dismiss, cast dropdown portal, subtitle dropdown portal). 6.2/6.3 N/A: they assume custom overlay controls, but Player uses native `<video controls>` + header-based app controls, so no `.controls-layer` restructure was needed to close the bugs. 6.8 manual verification pending on the media Mac (needs box + browser).
+**Last updated:** 2026-08-09
+**Progress:** Quick-fix overlay shipped (commit `a764daa`); Phase 6 (Overlay layering fix pass): 5 of 9 done + 2 N/A. **Phase 2 prereq landed (2026-08-09): `useBufferState()` reducer extraction — the informal state machine that was scattered across `Player.tsx` (`hasPlayedOnce` + `videoBuffering` + `stalled`) is now a single pure reducer in `apps/web/src/hooks/useBufferState.ts`.** Behavior-preserving; opens the door for the Phase 2 dead-swarm CTA to add transitions without hunting through the render blob. Phases 1, 3–5 still pending. 6.8 manual verification still pending on the media Mac (needs box + browser).
 
 ## Phase 0 — Quick fix (DONE)
 
@@ -19,10 +19,11 @@
 
 ## Phase 2 — Polished BufferingOverlay states
 
+- [x] **P2.0 (prereq — Epic Review 2026-08-09)** Extract explicit `useBufferState()` reducer covering the initial-buffer / mid-play / stalled / playing / error transitions. Consolidates the informal `hasPlayedOnce` + `videoBuffering` + `stalled` triad that was scattered across `Player.tsx`. Behavior-preserving; makes Phase 2 additions readable in one file. → `apps/web/src/hooks/useBufferState.ts`; Player.tsx refactored to dispatch on `<video>` events + swarm stall detection.
 - [ ] Replace quick-fix overlay with three-state component (initial / mid-play underrun / dead swarm).
 - [ ] Dead-swarm detection: `peers === 0 && elapsed > DEAD_SWARM_THRESHOLD_MS` OR `progress hasn't moved in 30s`.
 - [ ] Dead-swarm CTA: "Pick another" closes Player back to TorrentPicker; "Keep waiting" dismisses overlay.
-- [ ] Export `DEAD_SWARM_THRESHOLD_MS` from `services/torrent.ts` for client + server alignment.
+- [ ] Export `DEAD_SWARM_THRESHOLD_MS` from `services/torrent.ts` for client + server alignment. (Client-side constant already lives in `hooks/useBufferState.ts` at 10_000 ms — bump to 30_000 when the server export lands and the CTA is wired.)
 - [ ] Mid-play overlay (state 2) becomes more compact than initial (state 1) — less screen real estate.
 - [ ] Inline help text: "Streaming starts once enough of the file is downloaded ahead of the playhead."
 
