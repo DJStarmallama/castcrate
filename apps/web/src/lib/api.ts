@@ -288,6 +288,15 @@ export const api = {
     }),
   castSession: (sessionId: string) =>
     request<CastSessionStatus>(`/api/cast/sessions/${sessionId}`),
+  /** Hot-swap the active subtitle track set on a live cast session.
+   *  Pass `[]` to disable subtitles. `activeTrackIds` must reference
+   *  tracks that were advertised at cast start (see /api/cast/play). */
+  setCastActiveTracks: (sessionId: string, activeTrackIds: number[]) =>
+    request<{ ok: true }>(`/api/cast/sessions/${sessionId}/tracks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ activeTrackIds }),
+    }),
   subtitleTracks: (infoHash: string) =>
     request<{ tracks: SubtitleTrack[] }>(`/stream/${infoHash}/subtitles`),
   trailer: (title: string, year?: number | null) => {

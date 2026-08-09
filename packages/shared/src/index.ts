@@ -90,3 +90,19 @@ export interface CastSessionStatus {
   volumeLevel: number;
   muted: boolean;
 }
+
+/** One subtitle track passed to the Chromecast receiver as part of the initial
+ *  LOAD payload. `trackId` is what the client references in `activeTrackIds`. */
+export interface CastMediaTrack {
+  trackId: number;
+  url: string;
+  language: string;
+  name: string;
+}
+
+/** Payload for `POST /api/cast/sessions/:sessionId/tracks` — hot-swap the
+ *  active subtitle set on an already-playing cast session via EDIT_TRACKS_INFO. */
+export interface SetActiveTracksRequest {
+  /** Empty array turns subtitles off; single element switches to that track. */
+  activeTrackIds: number[];
+}

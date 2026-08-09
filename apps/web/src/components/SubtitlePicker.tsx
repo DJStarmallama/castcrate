@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import * as Popover from "@radix-ui/react-popover";
 import { api, type SubtitleTrack } from "../lib/api";
 
@@ -7,9 +7,20 @@ interface Props {
   infoHash: string;
   selected: SubtitleTrack | null;
   onSelect: (track: SubtitleTrack | null) => void;
+  /** When set, subtitle changes are also pushed to the Chromecast receiver
+   *  via EDIT_TRACKS_INFO — no reload, no playback interruption. */
+  castSessionId?: string | null;
 }
 
-export function SubtitlePicker({ infoHash, selected, onSelect }: Props) {
+// trackId convention shared with the server: subtitle.index + 1 (see
+// PlayTrack.trackId in apps/server/src/services/cast.ts). 0-based indexes
+// are shifted so that trackId 0 — which some Chromecast firmware treats as
+// "no active track" — is never used for a real subtitle.
+function trackIdFor(track: SubtitleTrack | null): number[] {
+  return track ? [track.index + 1] : [];
+}
+
+export function SubtitlePicker({ infoHash, selected, onSelect, castSessionId }: Props) {
   const [open, setOpen] = useState(false);
 
   const tracks = useQuery({
@@ -18,6 +29,24 @@ export function SubtitlePicker({ infoHash, selected, onSelect }: Props) {
     // Tracks become available after torrent metadata loads; poll briefly.
     refetchInterval: (q) => ((q.state.data?.tracks.length ?? 0) > 0 ? false : 3000),
   });
+
+  // When casting, mirror the local selection to the receiver. We keep the
+  // local state update (Player still renders <track> if the browser tab is
+  // visible during cast); the mutation only handles the receiver side.
+  //
+  // Fire-and-forget: we surface errors as a small warning inside the popover
+  // but don't roll back the local selection — the user can retry by picking
+  // the same track again.
+  const swap = useMutation({
+    mutationFn: (activeTrackIds: number[]) =>
+      api.setCastActiveTracks(castSessionId!, activeTrackIds),
+  });
+
+  const handleSelect = (track: SubtitleTrack | null) => {
+    onSelect(track);
+    if (castSessionId) swap.mutate(trackIdFor(track));
+    setOpen(false);
+  };
 
   const list = tracks.data?.tracks ?? [];
 
@@ -59,10 +88,7 @@ export function SubtitlePicker({ infoHash, selected, onSelect }: Props) {
           )}
           {list.length > 0 && (
             <button
-              onClick={() => {
-                onSelect(null);
-                setOpen(false);
-              }}
+              onClick={() => handleSelect(null)}
               className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-900 ${
                 !selected ? "text-zinc-100" : "text-zinc-400"
               }`}
@@ -73,10 +99,7 @@ export function SubtitlePicker({ infoHash, selected, onSelect }: Props) {
           {list.map((t) => (
             <button
               key={t.index}
-              onClick={() => {
-                onSelect(t);
-                setOpen(false);
-              }}
+              onClick={() => handleSelect(t)}
               className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-900 ${
                 selected?.index === t.index ? "text-zinc-100" : "text-zinc-400"
               }`}
@@ -87,6 +110,11 @@ export function SubtitlePicker({ infoHash, selected, onSelect }: Props) {
               )}
             </button>
           ))}
+          {swap.isError && (
+            <p className="px-3 py-2 text-xs text-red-400">
+              Couldn't update the Chromecast — try again.
+            </p>
+          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

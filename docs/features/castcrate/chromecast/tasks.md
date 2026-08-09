@@ -24,7 +24,7 @@
 
 ### Medium priority
 - [ ] Multi-session support (e.g. concurrent Chromecasts in different rooms)
-- [ ] Runtime subtitle track switching via `Media.editTracksInfo`
+- [x] Runtime subtitle track switching via `Media.editTracksInfo` — done 2026-08-09; see `docs/features/castcrate/subtitles/context.md` "Session notes" for the writeup (new `POST /api/cast/sessions/:id/tracks`, `setActiveTracks()` in `services/cast.ts`).
 - [ ] Friendly error UI when the receiver rejects load (codec mismatch)
 
 ### Low priority
