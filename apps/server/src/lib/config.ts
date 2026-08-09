@@ -24,4 +24,14 @@ export const config = {
   /** Optional SOCKS5/HTTP proxy URL loaded from env. Used as the default value
    *  for `proxyUrl` in runtime settings when no persisted value exists. */
   proxyUrl: process.env.PROXY_URL ?? null,
+  /** OpenSubtitles REST API v1 key. Free tier available at
+   *  https://www.opensubtitles.com/en/consumers. When unset the OpenSubtitles
+   *  fallback is disabled (subtitle discovery returns torrent-embedded only). */
+  openSubtitlesApiKey: process.env.OPENSUBTITLES_API_KEY ?? "",
+  /** Comma-separated ISO 639 language codes to restrict OpenSubtitles results
+   *  to. Defaults to `["en"]`. Whitespace around commas is tolerated. */
+  openSubtitlesLanguages: (process.env.OPENSUBTITLES_LANGUAGES ?? "en")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
 };

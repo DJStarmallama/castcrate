@@ -134,3 +134,47 @@ export interface SetActiveTracksRequest {
   /** Empty array turns subtitles off; single element switches to that track. */
   activeTrackIds: number[];
 }
+
+/** One entry from `GET /stream/:hash/subtitles` — a discriminated union so the
+ *  client knows which URL scheme to fetch. Torrent tracks are embedded in the
+ *  torrent file list; OpenSubtitles tracks come from the external API and are
+ *  fetched via `/api/subtitles/opensubtitles/:fileId`. */
+export type SubtitleTrack =
+  | TorrentSubtitleTrack
+  | OpenSubtitlesSubtitleTrack;
+
+/** Subtitle track embedded in the torrent's file list — served by
+ *  `/stream/:hash/subtitles/:index`. */
+export interface TorrentSubtitleTrack {
+  source: "torrent";
+  /** Position in the torrent-embedded track list (0-based). Used both as a
+   *  URL path segment for the body endpoint and as the basis for the
+   *  Chromecast trackId (`index + 1`). */
+  index: number;
+  fileName: string;
+  language: string;
+  ext: ".srt" | ".vtt";
+}
+
+/** Subtitle track discovered via OpenSubtitles — served by
+ *  `/api/subtitles/opensubtitles/:fileId` (also VTT, converted server-side). */
+export interface OpenSubtitlesSubtitleTrack {
+  source: "opensubtitles";
+  /** Synthetic id, e.g. `"os:1234567"`. Includes the `os:` prefix so callers
+   *  can pass it around opaquely without confusing it with a bare file id. */
+  id: string;
+  /** OpenSubtitles' file_id (numeric string). Used as the URL path segment
+   *  for the body endpoint. */
+  fileId: string;
+  /** ISO 639-1 language code (`"en"`, `"ja"`). */
+  language: string;
+  /** Human-readable language name, e.g. `"English"`. */
+  languageName: string;
+  /** Release string returned by OpenSubtitles — useful for disambiguating
+   *  multiple tracks in the same language (e.g. "YIFY vs. HD-1080p").
+   *  Optional; not every OS entry has one. */
+  releaseName?: string;
+  /** Download count reported by OpenSubtitles. Higher = more popular. Used
+   *  for sorting in the picker. */
+  downloadCount?: number;
+}

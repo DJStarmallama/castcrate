@@ -1,7 +1,7 @@
 # subtitles — Tasks
 
-**Last updated:** 2026-05-09
-**Progress:** Implemented (retrospective)
+**Last updated:** 2026-08-09
+**Progress:** Implemented (retrospective) + OpenSubtitles fallback source
 
 ## Original implementation (completed)
 
@@ -25,7 +25,7 @@
 ### Medium priority
 - [ ] Per-torrent cache of discovered tracks
 - [x] Multi-track switching at runtime via `Media.editTracksInfo` — done 2026-08-09 (see `context.md` "Session notes"). Torrent sessions only; HTTP-stream (Stremio) sessions still require stop+replay.
-- [ ] OpenSubtitles fallback when no subs are bundled
+- [x] OpenSubtitles fallback when no subs are bundled — done 2026-08-09 (see "OpenSubtitles source" session note in `context.md`). Enabled when `OPENSUBTITLES_API_KEY` env is set; `SubtitleTrack` shared type became a discriminated union; new `/api/subtitles/opensubtitles/:fileId` route serves cached SRT→VTT.
 - [ ] Tighten CORS to known origins once a stable web origin exists
 
 ### Low priority

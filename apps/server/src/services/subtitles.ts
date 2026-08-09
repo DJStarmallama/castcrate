@@ -1,13 +1,11 @@
 import { extname, basename } from "node:path";
+import type { SubtitleTrack, TorrentSubtitleTrack, OpenSubtitlesSubtitleTrack } from "@castcrate/shared";
 import { getTorrent } from "./torrent.js";
 import { srtToVtt } from "../lib/srt.js";
+import { searchOpenSubtitles, readOpenSubtitleContents } from "./opensubtitles.js";
 
-export interface SubtitleTrack {
-  index: number;
-  fileName: string;
-  language: string;
-  ext: ".srt" | ".vtt";
-}
+// Re-export the shared type so callers importing from this module keep working.
+export type { SubtitleTrack };
 
 const SUB_EXTS = new Set([".srt", ".vtt"]);
 
@@ -63,13 +61,14 @@ interface TorrentLike {
   files: TorrentFileLike[];
 }
 
-function listFromTorrent(t: TorrentLike): SubtitleTrack[] {
-  const tracks: SubtitleTrack[] = [];
+function listFromTorrent(t: TorrentLike): TorrentSubtitleTrack[] {
+  const tracks: TorrentSubtitleTrack[] = [];
   let idx = 0;
   for (const f of t.files) {
     const ext = extname(f.name).toLowerCase() as "" | ".srt" | ".vtt";
     if (!SUB_EXTS.has(ext)) continue;
     tracks.push({
+      source: "torrent",
       index: idx++,
       fileName: f.path ?? f.name,
       language: guessLanguage(f.path ?? f.name),
@@ -79,10 +78,52 @@ function listFromTorrent(t: TorrentLike): SubtitleTrack[] {
   return tracks;
 }
 
-export async function listSubtitles(infoHash: string): Promise<SubtitleTrack[]> {
+interface ListSubtitlesOpts {
+  /** IMDb id ("tt1375666") — enables OpenSubtitles fallback. When omitted or
+   *  when OpenSubtitles is disabled, only torrent-embedded tracks are returned. */
+  imdbId?: string;
+  /** Title fallback for OpenSubtitles when no imdbId is available. */
+  query?: string;
+}
+
+/**
+ * Discover subtitle tracks for a torrent. Returns torrent-embedded tracks first
+ * (sorted by their file order), followed by OpenSubtitles tracks when an
+ * `imdbId` is provided AND OpenSubtitles is configured.
+ *
+ * Never throws — subtitle discovery is best-effort. Failures in the OS branch
+ * log and return an empty list so torrent-embedded tracks still surface.
+ */
+export async function listSubtitles(
+  infoHash: string,
+  opts: ListSubtitlesOpts = {},
+): Promise<SubtitleTrack[]> {
   const t = (await getTorrent(infoHash)) as TorrentLike | null;
-  if (!t) return [];
-  return listFromTorrent(t);
+  const torrentTracks: TorrentSubtitleTrack[] = t ? listFromTorrent(t) : [];
+
+  const osTracks: OpenSubtitlesSubtitleTrack[] = [];
+  if (opts.imdbId || opts.query) {
+    const searchOpts: Parameters<typeof searchOpenSubtitles>[0] = {};
+    if (opts.imdbId) searchOpts.imdbId = opts.imdbId;
+    if (opts.query) searchOpts.query = opts.query;
+    const os = await searchOpenSubtitles(searchOpts);
+    for (const track of os) {
+      const entry: OpenSubtitlesSubtitleTrack = {
+        source: "opensubtitles",
+        id: track.id,
+        fileId: track.fileId,
+        language: track.language,
+        languageName: track.languageName,
+      };
+      if (track.releaseName) entry.releaseName = track.releaseName;
+      if (typeof track.downloadCount === "number") {
+        entry.downloadCount = track.downloadCount;
+      }
+      osTracks.push(entry);
+    }
+  }
+
+  return [...torrentTracks, ...osTracks];
 }
 
 export async function readSubtitleVtt(
@@ -102,6 +143,14 @@ export async function readSubtitleVtt(
   f.select?.(1);
   const text = await streamToString(file.createReadStream());
   return track.ext === ".vtt" ? text : srtToVtt(text);
+}
+
+/** Read + convert an OpenSubtitles-sourced SRT to VTT. The disk cache in
+ *  services/opensubtitles.ts guarantees the SRT is fetched at most once per
+ *  file_id — subsequent calls are pure fs reads + VTT conversion. */
+export async function readOpenSubtitleVtt(id: string): Promise<string> {
+  const srt = await readOpenSubtitleContents(id);
+  return srtToVtt(srt);
 }
 
 function streamToString(stream: NodeJS.ReadableStream): Promise<string> {

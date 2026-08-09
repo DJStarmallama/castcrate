@@ -235,10 +235,13 @@ export function Player({ movie, session, onClose }: Props) {
         )}
         {/* SubtitlePicker only applies to torrent sessions with a known infoHash.
             castSessionId is forwarded so the picker can hot-swap the receiver
-            track via EDIT_TRACKS_INFO while a cast is active. */}
+            track via EDIT_TRACKS_INFO while a cast is active. `imdbId` enables
+            the OpenSubtitles fallback branch on the server so releases with
+            no embedded .srt/.vtt (e.g. YTS) still get a subtitle list. */}
         {session.infoHash && (
           <SubtitlePicker
             infoHash={session.infoHash}
+            imdbId={movie.imdbId}
             selected={subtitle}
             onSelect={setSubtitle}
             castSessionId={castSessionId}
@@ -253,6 +256,7 @@ export function Player({ movie, session, onClose }: Props) {
           onSessionChange={setCastSessionId}
           subtitle={subtitle}
           infoHash={session.infoHash ?? undefined}
+          imdbId={movie.imdbId}
           stremioHttpStream={isHttpStream}
         />
         {!isCasting && (
@@ -286,19 +290,21 @@ export function Player({ movie, session, onClose }: Props) {
               ref={videoRef}
               // Force a fresh element when the subtitle track or selected
               // video file changes — <video> caches text tracks aggressively
-              // and won't re-fetch a new src on its own.
-              key={`${session.infoHash ?? "http"}-${selectedFileIndex ?? "auto"}-${subtitle?.index ?? "none"}`}
+              // and won't re-fetch a new src on its own. The subtitle key
+              // uses a source-tagged identifier so torrent-index N and
+              // opensubtitles-index N produce distinct keys.
+              key={`${session.infoHash ?? "http"}-${selectedFileIndex ?? "auto"}-${subtitleKey(subtitle)}`}
               src={playUrl}
               controls
               autoPlay
               crossOrigin="anonymous"
               className="h-full max-h-full w-full max-w-full"
             >
-              {subtitle && session.infoHash && (
+              {subtitle && (
                 <track
                   kind="subtitles"
-                  src={`/stream/${session.infoHash}/subtitles/${subtitle.index}`}
-                  label={subtitle.language}
+                  src={subtitleTrackUrl(subtitle, session.infoHash)}
+                  label={subtitleLabel(subtitle)}
                   default
                 />
               )}
@@ -429,6 +435,36 @@ function needsAutoTranscode(codec: string | null | undefined): boolean {
   if (!codec) return false;
   const c = codec.toLowerCase();
   return c === "x265" || c === "h265" || c === "hevc" || c === "av1";
+}
+
+/** URL for the in-browser <track> element. Torrent-embedded subs live under
+ *  /stream/:hash/subtitles/:index; OpenSubtitles subs under a global path
+ *  keyed on file_id. Returns an empty string when the caller passes a
+ *  torrent track without an infoHash (shouldn't happen — the picker is
+ *  gated on session.infoHash). */
+function subtitleTrackUrl(
+  track: SubtitleTrack,
+  infoHash: string | null,
+): string {
+  if (track.source === "torrent") {
+    if (!infoHash) return "";
+    return `/stream/${infoHash}/subtitles/${track.index}`;
+  }
+  return `/api/subtitles/opensubtitles/${track.fileId}`;
+}
+
+/** Display label for a track — the picker shows this on the trigger button
+ *  and the <track> element uses it as the `label` attribute. OS tracks use
+ *  the full language name; torrent tracks use the heuristic language guess. */
+function subtitleLabel(track: SubtitleTrack): string {
+  return track.source === "torrent" ? track.language : track.languageName;
+}
+
+/** Stable identity string for the <video> re-key. Different sources with the
+ *  same numeric index/id shouldn't collide, so we prefix with the source tag. */
+function subtitleKey(track: SubtitleTrack | null): string {
+  if (!track) return "none";
+  return track.source === "torrent" ? `t:${track.index}` : `os:${track.id}`;
 }
 
 function FullscreenIcon() {

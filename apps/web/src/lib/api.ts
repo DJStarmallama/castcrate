@@ -6,6 +6,7 @@ import type {
   MovieSearchResult,
   SeriesDetails,
   SeriesEpisode,
+  SubtitleTrack,
   TorrentResult,
 } from "@castcrate/shared";
 
@@ -274,6 +275,9 @@ export const api = {
     subtitlePath?: string;
     subtitleLanguage?: string;
     subtitleName?: string;
+    /** Enables the OpenSubtitles fallback branch on the server when
+     *  enumerating tracks for the initial LOAD payload. */
+    imdbId?: string;
   }) =>
     request<{ sessionId: string; streamUrl: string }>("/api/cast/play", {
       method: "POST",
@@ -297,8 +301,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activeTrackIds }),
     }),
-  subtitleTracks: (infoHash: string) =>
-    request<{ tracks: SubtitleTrack[] }>(`/stream/${infoHash}/subtitles`),
+  subtitleTracks: (infoHash: string, imdbId?: string) => {
+    const url = new URL(`/stream/${infoHash}/subtitles`, window.location.origin);
+    if (imdbId) url.searchParams.set("imdbId", imdbId);
+    return request<{ tracks: SubtitleTrack[] }>(url.pathname + url.search);
+  },
   trailer: (title: string, year?: number | null) => {
     const url = new URL("/api/trailer", window.location.origin);
     url.searchParams.set("title", title);
@@ -362,11 +369,9 @@ export const api = {
     ),
 };
 
-export interface SubtitleTrack {
-  index: number;
-  fileName: string;
-  language: string;
-  ext: ".srt" | ".vtt";
-}
+// Re-export the shared discriminated union so component code has a stable
+// import site. Torrent-embedded → `{ source: "torrent", index, ... }`;
+// OpenSubtitles → `{ source: "opensubtitles", id, fileId, ... }`.
+export type { SubtitleTrack };
 
 export { ApiError };
