@@ -83,7 +83,7 @@ Most features are already in progress or complete and were built independently b
 
 Cross-feature tech debt and review findings. **Populated and updated by `/review-epic`**.
 
-- (none yet — run `/review-epic castcrate` to populate)
+- ~~Indexer fallback wiring duplicated per adapter~~ ✅ **Resolved 2026-08-09** — extracted `IndexerAdapter` + `runFallback` to `apps/server/src/lib/indexers.ts`. All adapters (YTS, EZTV, Knaben, TorrentDay, Stremio) now register through a common interface; `routes/torrents.ts` builds `movieChain`/`episodeChain`/`seasonPackChain` at module init and delegates to a single `runFallback` call. Adapter error boundary is now symmetric — every adapter goes through the same throw/enabled/gate flow, with optional `formatThrown` hooks for structured wire errors (TorrentDay auth, Knaben per-kind prefixes). Response shape unchanged (`tried: string[]` on the wire, `TriedEntry[]` internally).
 
 ---
 

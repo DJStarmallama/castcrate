@@ -12,6 +12,7 @@ import {
 import { getDispatcher } from "../lib/proxy.js";
 import { getSettings } from "./settings.js";
 import { episodeMatchesTitle } from "./knaben.js";
+import type { IndexerAdapter } from "../lib/indexers.js";
 
 export interface TorrentDayResult extends TorrentResult {
   source: "torrentday";
@@ -289,3 +290,45 @@ export async function fetchTorrentBlob(torrentUrl: string): Promise<Buffer> {
 }
 
 export { episodeMatchesTitle };
+
+// ---------------------------------------------------------------------------
+// IndexerAdapter registration. TorrentDay only runs when `tdAvailable()` is
+// true (enabled + credentials present). Episode search additionally requires
+// a series title, matching the old route's `title && tdAvailable()` gate.
+// The `formatThrown` hook preserves the {source, code: "auth"|"fetch"}
+// structured wire shape the route used to emit inline.
+// ---------------------------------------------------------------------------
+
+export const torrentdayAdapter: IndexerAdapter = {
+  name: "torrentday",
+  supportsMovie: true,
+  supportsEpisode: true,
+  supportsSeasonPack: false,
+  // TD requires credentials AND, for episode search, a series title —
+  // matching the old route's `title && tdAvailable()` gate.
+  enabled: (query) => {
+    if (!tdAvailable()) return false;
+    if ("season" in query && !query.title) return false;
+    return true;
+  },
+  searchMovie: async (query) => {
+    const results = await searchTorrentDayMovie(query.title, query.year);
+    return { results };
+  },
+  searchEpisode: async (query) => {
+    const results = await searchTorrentDayEpisode(
+      query.title!,
+      query.season,
+      query.episode,
+    );
+    return { results };
+  },
+  formatThrown: (err) => {
+    if (err instanceof TorrentDayAuthError) {
+      return { source: "torrentday", code: "auth" };
+    }
+    // All other TD errors (fetch failure, disabled, unexpected redirect) map
+    // to `code: "fetch"` — matching the old route's catch-all branch.
+    return { source: "torrentday", code: "fetch" };
+  },
+};

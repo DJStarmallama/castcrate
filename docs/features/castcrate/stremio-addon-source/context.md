@@ -1,7 +1,15 @@
 # stremio-addon-source — Context
 
-**Last updated:** 2026-05-15
+**Last updated:** 2026-08-09
 **Status:** Phases 1 + 2 + 3 + 4 + 5 + 6 complete; Phases 7–9 pending
+
+## 2026-08-09 — IndexerAdapter registration
+
+- `services/stremio.ts` now exports `stremioAdapter: IndexerAdapter` (`supportsMovie`, `supportsEpisode`; no season packs) at the bottom of the file.
+- `routes/torrents.ts` slots it between YTS/EZTV and Knaben in `movieChain` and `episodeChain`; the inline `stremioEnabled` gate + `outcome.errors` fan-out loop is gone.
+- `enabled(query)` checks both that at least one addon is enabled AND that the query carries an imdbId — this preserves the old route's `imdbId !== undefined && addons.some(enabled)` gate for movie queries (episode queries always carry an imdbId).
+- `AdapterOutcome.errors` is the generic surface for fan-out failures; `runFallback` expands each per-addon error into its own entry in the wire `errors[]` array, preserving the exact `{ source: "stremio", addonId, addonName, code }` shape the old route emitted.
+- `StremioSearchOutcome` type and `searchStremioMovie/Episode()` function exports are unchanged; existing tests (including `routes/stremio.ts` test endpoint) keep working.
 
 ## Implementation notes
 

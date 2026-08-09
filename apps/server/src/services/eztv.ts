@@ -2,6 +2,8 @@ import { LRUCache } from "lru-cache";
 import type { TorrentResult } from "@castcrate/shared";
 import type { RequestInit as UndiciRequestInit } from "undici";
 import { getDispatcher } from "../lib/proxy.js";
+import type { IndexerAdapter } from "../lib/indexers.js";
+import { getSettings } from "./settings.js";
 
 const EZTV_BASE = process.env.EZTV_BASE_URL ?? "https://eztvx.to/api";
 
@@ -219,3 +221,27 @@ export async function searchSeasonPack(
   packs.sort(rank);
   return packs;
 }
+
+// ---------------------------------------------------------------------------
+// IndexerAdapter registration. EZTV supports both single-episode and
+// season-pack lookups; movies are not applicable. The old route code ran
+// both in Promise.all against a shared underlying cache — with the fallback
+// chain each is a separate call, but `fetchAllTorrents()` is cached so the
+// second call is free.
+// ---------------------------------------------------------------------------
+
+export const eztvAdapter: IndexerAdapter = {
+  name: "eztv",
+  supportsMovie: false,
+  supportsEpisode: true,
+  supportsSeasonPack: true,
+  enabled: () => getSettings().sourceEnabled.eztv,
+  searchEpisode: async (query) => {
+    const results = await searchEpisode(query.imdbId, query.season, query.episode);
+    return { results };
+  },
+  searchSeasonPack: async (query) => {
+    const results = await searchSeasonPack(query.imdbId, query.season);
+    return { results };
+  },
+};

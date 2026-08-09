@@ -1,8 +1,16 @@
 # torrentday-indexer — Context
 
-**Last updated:** 2026-05-15
+**Last updated:** 2026-08-09
 **Status:** All phases complete — server + UI shipped; manual smoke tests pending
 **Depends on:** `proxy-routing` (recommended; geoblocked in AUS)
+
+## 2026-08-09 — IndexerAdapter registration
+
+- `services/torrentday.ts` now exports `torrentdayAdapter: IndexerAdapter` (`supportsMovie`, `supportsEpisode`; no season packs) at the bottom of the file.
+- `routes/torrents.ts` places it last in `movieChain` and `episodeChain`; the inline `if (results.length === 0 && tdAvailable()) { ... TorrentDayAuthError branch ... }` blocks are gone.
+- `enabled()` returns `tdAvailable() && (kind === 'movie' || query.title)` — preserves the old route's `title && tdAvailable()` gate for episodes so TD only runs when there's a series title to search.
+- `formatThrown()` maps `TorrentDayAuthError → { source: "torrentday", code: "auth" }` and other throws to `{ code: "fetch" }`, preserving the structured wire error shape the old route produced.
+- `searchTorrentDayMovie/Episode()`, `fetchTorrentBlob()`, `tdAvailable()`, error classes: all unchanged and still exported for use by `routes/torrentday.ts` (test endpoint) and `/api/torrent/start`.
 
 ## Problem
 

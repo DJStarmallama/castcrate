@@ -8,6 +8,8 @@ import {
   rankTorrent,
 } from "../lib/quality.js";
 import { getDispatcher } from "../lib/proxy.js";
+import type { IndexerAdapter } from "../lib/indexers.js";
+import { getSettings } from "./settings.js";
 
 const KNABEN_API = process.env.KNABEN_BASE_URL ?? "https://api.knaben.org/v1";
 
@@ -245,3 +247,73 @@ export async function searchKnabenMovie(
 }
 
 export const _internals = { magnetFor, toResult };
+
+// ---------------------------------------------------------------------------
+// IndexerAdapter registration. Knaben covers all three kinds (movie, episode,
+// season pack). The `formatThrown` hook preserves the exact per-kind error
+// prefixes the old route used to emit (`knaben:`, `knaben (episode):`,
+// `knaben (pack):`) so the wire error strings don't drift.
+// ---------------------------------------------------------------------------
+
+/** Wraps an error with a specific wire prefix that survives `runFallback`'s
+ *  default `<adapter.name>: <msg>` formatter. Kept module-local. */
+class KnabenTaggedError extends Error {
+  constructor(public readonly wireMessage: string) {
+    super(wireMessage);
+    this.name = "KnabenTaggedError";
+  }
+}
+
+export const knabenAdapter: IndexerAdapter = {
+  name: "knaben",
+  supportsMovie: true,
+  supportsEpisode: true,
+  supportsSeasonPack: true,
+  // For movie search, only the source flag matters — knaben always has a
+  // title to search on. For episode/season-pack search, a series title
+  // is required (knaben has no IMDb episode lookup); the old route also
+  // skipped when title was empty. Movie queries reach here with a
+  // required title so no extra guard is needed.
+  enabled: (query) => {
+    if (!getSettings().sourceEnabled.knaben) return false;
+    if ("season" in query && !query.title) return false;
+    return true;
+  },
+  searchMovie: async (query) => {
+    // No custom prefix for movie — `knaben: <msg>` is what the default
+    // formatter emits, matching legacy behaviour.
+    const results = await searchKnabenMovie(query.title, query.year);
+    return { results };
+  },
+  searchEpisode: async (query) => {
+    // `enabled()` gate guarantees title is present.
+    try {
+      const results = await searchKnabenEpisode(
+        query.title!,
+        query.season,
+        query.episode,
+      );
+      return { results };
+    } catch (err) {
+      throw new KnabenTaggedError(
+        `knaben (episode): ${(err as Error).message}`,
+      );
+    }
+  },
+  searchSeasonPack: async (query) => {
+    try {
+      const results = await searchKnabenSeasonPack(query.title!, query.season);
+      return { results };
+    } catch (err) {
+      throw new KnabenTaggedError(
+        `knaben (pack): ${(err as Error).message}`,
+      );
+    }
+  },
+  formatThrown: (err: unknown) => {
+    if (err instanceof KnabenTaggedError) {
+      return err.wireMessage;
+    }
+    return undefined;
+  },
+};

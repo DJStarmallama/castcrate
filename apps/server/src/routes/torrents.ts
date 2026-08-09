@@ -1,26 +1,17 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { extname } from "node:path";
-import type { TorrentResult } from "@castcrate/shared";
-import { searchTorrents } from "../services/yts.js";
-import { searchEpisode, searchSeasonPack } from "../services/eztv.js";
+import { ytsAdapter } from "../services/yts.js";
+import { eztvAdapter } from "../services/eztv.js";
+import { knabenAdapter } from "../services/knaben.js";
+import { fetchTorrentBlob, torrentdayAdapter } from "../services/torrentday.js";
+import { stremioAdapter } from "../services/stremio.js";
 import {
-  searchKnabenEpisode,
-  searchKnabenMovie,
-  searchKnabenSeasonPack,
-} from "../services/knaben.js";
-import {
-  tdAvailable,
-  searchTorrentDayMovie,
-  searchTorrentDayEpisode,
-  fetchTorrentBlob,
-  TorrentDayAuthError,
-} from "../services/torrentday.js";
-import {
-  searchStremioMovie,
-  searchStremioEpisode,
-} from "../services/stremio.js";
-import { getSettings } from "../services/settings.js";
+  runFallback,
+  triedNames,
+  type AdapterError,
+  type IndexerAdapter,
+} from "../lib/indexers.js";
 import {
   startTorrent,
   getStatus,
@@ -35,6 +26,57 @@ import {
 import { appendHistory, updateHistoryById } from "../services/history.js";
 import { parseRange } from "../lib/range.js";
 import { spawnTranscode, checkFfmpeg } from "../services/transcoder.js";
+
+// ---------------------------------------------------------------------------
+// Fallback chains — order matters and matches the legacy inline order.
+//   Movies:      YTS → Stremio → Knaben → TorrentDay
+//   Episodes:    EZTV → Stremio → Knaben → TorrentDay
+//   Season packs: EZTV → Knaben
+// Adapters self-gate via `adapter.enabled(ctx)`, so a chain that includes
+// TorrentDay still no-ops when `tdAvailable()` is false, matching the
+// previous route's inline `if (tdAvailable())` guard.
+// ---------------------------------------------------------------------------
+
+const movieChain: IndexerAdapter[] = [
+  ytsAdapter,
+  stremioAdapter,
+  knabenAdapter,
+  torrentdayAdapter,
+];
+
+const episodeChain: IndexerAdapter[] = [
+  eztvAdapter,
+  stremioAdapter,
+  knabenAdapter,
+  torrentdayAdapter,
+];
+
+const seasonPackChain: IndexerAdapter[] = [eztvAdapter, knabenAdapter];
+
+/**
+ * Dedupes errors across multiple chain runs — the episode route runs two
+ * chains (episode + season pack) and both may have visited the same adapter
+ * (typically eztv). The old inline code emitted a single `eztv:` entry in
+ * that case, and Knaben's episode/pack failures were distinguished by their
+ * prefixes (`knaben (episode):` vs `knaben (pack):`) so both showed up
+ * distinctly. Dedupe key covers both: string errors keyed by content,
+ * object errors keyed by `(source, code, addonId)`.
+ */
+function mergeErrors(...groups: AdapterError[][]): AdapterError[] {
+  const seen = new Set<string>();
+  const out: AdapterError[] = [];
+  for (const g of groups) {
+    for (const err of g) {
+      const key = typeof err === "string"
+        ? `s::${err}`
+        : `o::${err.source}::${err.code}::${err.addonId ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(err);
+    }
+  }
+  return out;
+}
 
 // Cap on how long we'll wait for the first byte from WebTorrent before
 // returning 504. Bytes already in flight aren't subject to this — once
@@ -99,63 +141,23 @@ export async function torrentRoutes(app: FastifyInstance) {
         imdbId = undefined;
       }
 
-      const tried: string[] = [];
-      const errors: Array<string | { source: string; code: string; addonId?: string; addonName?: string }> = [];
-      let results: TorrentResult[] = [];
-      const settings = getSettings();
+      const outcome = await runFallback(
+        movieChain,
+        {
+          title,
+          ...(year !== undefined ? { year } : {}),
+          ...(imdbId !== undefined ? { imdbId } : {}),
+        },
+        "movie",
+      );
 
-      if (settings.sourceEnabled.yts) {
-        try {
-          tried.push("yts");
-          results = await searchTorrents(title, year);
-        } catch (err) {
-          errors.push(`yts: ${(err as Error).message}`);
-        }
+      const tried = triedNames(outcome.tried);
+      if (outcome.results.length === 0 && outcome.errors.length > 0) {
+        return reply
+          .code(502)
+          .send({ error: "all sources failed", tried, errors: outcome.errors });
       }
-
-      // Stremio — slot between YTS and Knaben; only when imdbId is present and
-      // at least one addon is enabled.
-      if (results.length === 0) {
-        const stremioEnabled =
-          imdbId !== undefined &&
-          settings.stremioAddons.some((a) => a.enabled);
-
-        if (stremioEnabled && imdbId) {
-          tried.push("stremio");
-          const outcome = await searchStremioMovie(imdbId);
-          if (outcome.results.length > 0) {
-            results = outcome.results;
-          }
-          for (const e of outcome.errors) {
-            errors.push({ source: "stremio", addonId: e.addonId, addonName: e.addonName, code: e.code });
-          }
-        }
-      }
-
-      if (results.length === 0 && settings.sourceEnabled.knaben) {
-        try {
-          tried.push("knaben");
-          results = await searchKnabenMovie(title, year);
-        } catch (err) {
-          errors.push(`knaben: ${(err as Error).message}`);
-        }
-      }
-      if (results.length === 0 && tdAvailable()) {
-        tried.push("torrentday");
-        try {
-          results = await searchTorrentDayMovie(title, year);
-        } catch (err) {
-          if (err instanceof TorrentDayAuthError) {
-            errors.push({ source: "torrentday", code: "auth" });
-          } else {
-            errors.push({ source: "torrentday", code: "fetch" });
-          }
-        }
-      }
-      if (results.length === 0 && errors.length > 0) {
-        return reply.code(502).send({ error: "all sources failed", tried, errors });
-      }
-      return { results, tried };
+      return { results: outcome.results, tried };
     },
   );
 
@@ -176,82 +178,49 @@ export async function torrentRoutes(app: FastifyInstance) {
         error: "imdbId (ttNNN), season, and episode are required",
       });
     }
-    const tried: string[] = [];
-    const errors: Array<string | { source: string; code: string; addonId?: string; addonName?: string }> = [];
-    let episodeResults: TorrentResult[] = [];
-    let packResults: TorrentResult[] = [];
-    const settings = getSettings();
 
-    if (settings.sourceEnabled.eztv) {
-      try {
-        tried.push("eztv");
-        [episodeResults, packResults] = await Promise.all([
-          searchEpisode(imdbId, season, episode),
-          searchSeasonPack(imdbId, season),
-        ]);
-      } catch (err) {
-        errors.push(`eztv: ${(err as Error).message}`);
-      }
-    }
+    // Two independent fallback chains: one for single-episode results, one
+    // for season packs. Both start with EZTV (which is cached, so the second
+    // call to `fetchAllTorrents` is free). `mergeTried`/`mergeErrors` collapse
+    // duplicate entries so the wire response matches the legacy shape where
+    // each adapter appears once even if it was visited by both chains.
+    const episodeOutcome = await runFallback(
+      episodeChain,
+      {
+        imdbId,
+        season,
+        episode,
+        ...(title ? { title } : {}),
+      },
+      "episode",
+    );
 
-    // Stremio — slot between EZTV and Knaben for episode results.
-    if (episodeResults.length === 0) {
-      const stremioEnabled = settings.stremioAddons.some((a) => a.enabled);
-      if (stremioEnabled) {
-        if (!tried.includes("stremio")) tried.push("stremio");
-        const outcome = await searchStremioEpisode(imdbId, season, episode);
-        if (outcome.results.length > 0) {
-          episodeResults = outcome.results;
-        }
-        for (const e of outcome.errors) {
-          errors.push({ source: "stremio", addonId: e.addonId, addonName: e.addonName, code: e.code });
-        }
-      }
-    }
+    const seasonPackOutcome = await runFallback(
+      seasonPackChain,
+      {
+        imdbId,
+        season,
+        ...(title ? { title } : {}),
+      },
+      "seasonPack",
+    );
 
-    if (episodeResults.length === 0 && title && settings.sourceEnabled.knaben) {
-      if (!tried.includes("knaben")) tried.push("knaben");
-      try {
-        episodeResults = await searchKnabenEpisode(title, season, episode);
-      } catch (err) {
-        errors.push(`knaben (episode): ${(err as Error).message}`);
-      }
-    }
-
-    if (packResults.length === 0 && title && settings.sourceEnabled.knaben) {
-      if (!tried.includes("knaben")) tried.push("knaben");
-      try {
-        packResults = await searchKnabenSeasonPack(title, season);
-      } catch (err) {
-        errors.push(`knaben (pack): ${(err as Error).message}`);
-      }
-    }
-
-    // TD fallback for episodes — only when title is available.
-    if (episodeResults.length === 0 && title && tdAvailable()) {
-      if (!tried.includes("torrentday")) tried.push("torrentday");
-      try {
-        episodeResults = await searchTorrentDayEpisode(title, season, episode);
-      } catch (err) {
-        if (err instanceof TorrentDayAuthError) {
-          errors.push({ source: "torrentday", code: "auth" });
-        } else {
-          errors.push({ source: "torrentday", code: "fetch" });
-        }
-      }
-    }
+    // `triedNames` dedupes by name — passing the concatenated tried arrays
+    // collapses eztv (present in both chains) into a single entry.
+    const tried = triedNames([...episodeOutcome.tried, ...seasonPackOutcome.tried]);
+    const errors = mergeErrors(episodeOutcome.errors, seasonPackOutcome.errors);
 
     if (
-      episodeResults.length === 0 &&
-      packResults.length === 0 &&
+      episodeOutcome.results.length === 0 &&
+      seasonPackOutcome.results.length === 0 &&
       errors.length > 0
     ) {
       return reply.code(502).send({ error: "all sources failed", tried, errors });
     }
 
     return {
-      episode: episodeResults,
-      seasonPacks: packResults,
+      episode: episodeOutcome.results,
+      seasonPacks: seasonPackOutcome.results,
       tried,
     };
   });
