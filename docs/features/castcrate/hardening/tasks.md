@@ -20,12 +20,14 @@
 ## Phase B — Server hardening ✅
 
 - [x] **B1.** Atomic `history.json` writes (temp file + `fs.rename`); added `updateHistoryById` for in-place edits
-- [x] **B2.** `activeProcesses: Set<ChildProcessWithoutNullStreams>` in `services/transcoder.ts`; `shutdownTranscodes()` exported and wired into the Fastify `onClose` hook in `index.ts` (SIGTERM, then SIGKILL after 1.5s)
+- [x] **B2.** `activeProcesses: Set<ChildProcessWithoutNullStreams>` in `services/transcoder.ts`; `shutdownTranscodes()` exported and wired into the Fastify `onClose` hook in `index.ts`. Two-phase shutdown: SIGTERM first, per-process `exit` await, SIGKILL after 2s per process; returns once every process is confirmed exited so the bounded shutdown in `index.ts` doesn't race (2026-08-09 follow-on).
 - [x] **B3.** `/api/cast/play` appends history on cast start with `historyId` saved on `TorrentMeta`; `DELETE /api/torrent/:hash` updates that entry instead of duplicating
-- [x] **B4.** First-byte timeout (30s) on `/stream/:hash` — returns 504 if WebTorrent never delivers the first chunk; does not affect reads once flowing
+- [x] **B4.** First-byte timeout on `/stream/:hash` **and `/stream/:hash/transcoded`** — returns 504 if WebTorrent never delivers the first chunk (or ffmpeg never produces output). Default 60s, configurable via `STREAM_FIRST_BYTE_TIMEOUT_MS` env var (2026-08-09 follow-on: transcoded coverage + env plumbing + default bumped 30s → 60s).
 - [x] **B5.** `checkFfmpeg(force = false)` accepts an explicit re-probe; `/api/system/check?refresh=1` triggers it (lets the Settings toggle re-check after a fresh ffmpeg install)
+- [x] **B6.** `meta` map cleanup on external torrent removal — `torrent.once("close", ...)` in `startTorrent` deletes the map entry when webtorrent destroys the torrent from its own error paths (client.destroy, unrecoverable torrent errors) (2026-08-09 follow-on).
+- [x] **B7.** Idempotency test for `removeTorrent` — `apps/server/src/services/__tests__/torrent.test.ts` mocks the webtorrent client, asserts the second `removeTorrent()` call swallows "No torrent with id ..." without throwing; also covers meta cleanup, `destroyStore` forwarding, and that unrelated errors still propagate (2026-08-09 follow-on).
 
-**Acceptance:** ✅ `pnpm typecheck` clean; `pnpm test` 54/54 (3 new tests for updateHistoryById and atomic-write tmp cleanup).
+**Acceptance:** ✅ `pnpm typecheck` clean; `pnpm test` 222/222 (was 218 pre-2026-08-09; +4 tests from `torrent.test.ts`). Build clean.
 
 ---
 
@@ -69,4 +71,9 @@ Each item is feature-sized; spawn `/start-feature` when ready.
 
 Add session notes as work progresses:
 
-- _(none yet — feature has not started)_
+- **2026-08-09 — Phase B follow-on.** Feature was marked complete in tasks.md before production hardware deploy, but the post-deploy bug chain (webtorrent v2 double-remove crash `4cb84d9`, tilde-in-env-file sandbox escape, silent post-ready error swallowing) surfaced gaps the original Phase B pass missed. This session:
+  - **Stream timeout expansion (B4).** Bumped default 30s → 60s, made it configurable via `STREAM_FIRST_BYTE_TIMEOUT_MS`, and extended the guard to `/stream/:hash/transcoded` (previously only `/stream/:hash` was protected — an ffmpeg subprocess that never got any input bytes would hang the client forever).
+  - **Meta map leak (new B6).** Added `torrent.once("close", ...)` in `startTorrent` so meta entries are cleared when webtorrent destroys a torrent from its own error paths, not only when `removeTorrent()` is called. Belt-and-braces — `removeTorrent()` still clears it, but if webtorrent tears a torrent down first (e.g. unrecoverable error), the entry no longer leaks for the process lifetime.
+  - **`shutdownTranscodes` rewrite (B2).** Previous version blocked for a flat 1.5s regardless of how long ffmpeg actually took. Now: SIGTERM every process first, await each process's `exit` event with a per-process 2s ceiling, SIGKILL any process that hasn't exited by the deadline, return once every process is confirmed done. Matches the brief's "await their exit with a short 2s per-process timeout, then SIGKILL" and no longer wastes shutdown budget on a fixed delay.
+  - **Idempotency test (new B7).** Added `apps/server/src/services/__tests__/torrent.test.ts` — mocks the webtorrent client, asserts the second `removeTorrent()` call swallows the "No torrent with id ..." rejection without throwing (regression coverage for `4cb84d9`), plus meta cleanup, `destroyStore` forwarding, and that unrelated rejections still propagate.
+  - Test count 218 → 222; typecheck + build clean.

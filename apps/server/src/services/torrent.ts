@@ -25,8 +25,14 @@ interface WtTorrent {
   numPeers: number;
   length: number;
   destroy(cb?: () => void): void;
-  on(event: "ready" | "done" | "error", cb: (err?: Error) => void): void;
-  once(event: "ready" | "done" | "error", cb: (err?: Error) => void): void;
+  on(
+    event: "ready" | "done" | "error" | "close",
+    cb: (err?: Error) => void,
+  ): void;
+  once(
+    event: "ready" | "done" | "error" | "close",
+    cb: (err?: Error) => void,
+  ): void;
 }
 
 interface WtClient {
@@ -141,6 +147,13 @@ export async function startTorrent(
     // sequentialDownload: stream the head of the file before the tail —
     // required for in-progress playback and byte-range requests to work.
     client.add(input, { path: config.downloadPath, sequentialDownload: true }, (torrent) => {
+      // Belt-and-braces meta cleanup — normally removeTorrent() clears the map,
+      // but webtorrent can emit 'close' from its own error paths (client
+      // destroy, torrent-level unrecoverable error, etc.). Without this the
+      // meta entry leaks for the process lifetime.
+      torrent.once("close", () => {
+        meta.delete(torrent.infoHash);
+      });
       const finalize = () => {
         let file: WtFile | null = null;
 

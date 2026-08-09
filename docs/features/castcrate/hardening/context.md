@@ -1,8 +1,8 @@
 # hardening — Context
 
-**Last updated:** 2026-05-09
-**Current phase:** Not started
-**Status:** Planned
+**Last updated:** 2026-08-09
+**Current phase:** Phase B (follow-on) complete
+**Status:** ✅ Complete (Phases A–E all shipped; Phase B extended post-hardware-deploy)
 
 ## Quick status
 
@@ -79,6 +79,34 @@ The discovery pass surfaced these as repeated themes across phases. Bundling the
 
 ## Epic Review Findings (2026-08-09)
 
-- 💳 **Phases A–D still zero-progress despite production deploy** — atomic history writes, ffmpeg cleanup, stream timeouts should have landed before real-hardware casting. Bump to front of the queue; `/proceed castcrate/hardening` for Phase A immediately. (See epic-overview.md → Tech Debt / Findings.)
+- 💳 **Phases A–D still zero-progress despite production deploy** — ~~atomic history writes, ffmpeg cleanup, stream timeouts should have landed before real-hardware casting.~~ **Resolved 2026-08-09 in the same session (see Phase B follow-on below):** B2 (ffmpeg exit-await), B4 (stream first-byte timeout on both /stream endpoints), B6 (meta-map cleanup on external torrent close), B7 (removeTorrent idempotency test) landed; B1/B3/B5 verified already implemented.
 
 _Recorded by /review-epic castcrate on 2026-08-09._
+
+## Session log
+
+### 2026-08-09 — Phase B follow-on (post-production-deploy)
+
+Feature was marked complete in Q2, but the epic just shipped to production hardware (Ubuntu 26.04 on a 2011 MBP, casting to a real Chromecast) and the post-deploy bug chain (webtorrent v2 double-remove crash `4cb84d9`, tilde-in-env-file sandbox escape, silent post-ready error swallowing) exposed gaps the original Phase B pass missed. This session extended Phase B with:
+
+**Landed:**
+- **B2 rewrite** — `shutdownTranscodes` now awaits each subprocess's `exit` event with a per-process 2s ceiling (previously slept 1.5s regardless). SIGTERM every process first, then SIGKILL any that miss the deadline. Returns once every process is confirmed exited so `index.ts`'s bounded shutdown doesn't race against ffmpeg cleanup.
+- **B4 expansion** — first-byte timeout default 30s → 60s, configurable via `STREAM_FIRST_BYTE_TIMEOUT_MS` env, and applied to `/stream/:hash/transcoded` too. Previously only the raw `/stream/:hash` endpoint had the guard — a transcoded stream where ffmpeg never got input bytes would hang the client forever.
+- **B6 (new)** — `torrent.once("close", ...)` in `startTorrent` clears the meta map entry when webtorrent destroys the torrent from its own error paths (client.destroy, unrecoverable torrent errors). Previously `meta.delete()` only ran from `removeTorrent()`, so external teardowns leaked the entry for the process lifetime.
+- **B7 (new)** — `apps/server/src/services/__tests__/torrent.test.ts` — idempotency contract test with a mocked webtorrent client. Second `removeTorrent()` call swallows "No torrent with id ..." (regression coverage for `4cb84d9`). Also covers meta cleanup, `destroyStore` forwarding, and that unrelated rejections still propagate.
+
+**Test count:** 218 → 222 (+4).
+**Typecheck:** clean. **Build:** clean.
+
+**Decisions:**
+- Bumped default first-byte timeout 30s → 60s per brief. 30s was chosen originally for aggressive UX but production observed hardware sometimes needs ~40–50s to get first bytes from a fresh torrent with sparse peers. 60s = default value from the brief; env override in place if operator wants tighter.
+- `shutdownTranscodes` signature change (`timeoutMs = 1500` → `perProcessTimeoutMs = 2000`) is a non-breaking parameter rename — sole caller in `index.ts` passes no args.
+- Chose `torrent.once("close", ...)` over `torrent.on("close", ...)` — the torrent object only emits `close` once (it's destroyed), so a `once` listener is safer against duplicate deletes.
+
+**No surprises:** webtorrent 2.8.5's `torrent.emit('close')` is confirmed by grepping the installed module (`torrent.js` line 1022). Signature added to the local `WtTorrent` interface. Meta cleanup listener is attached inside `client.add()`'s callback, so it applies to every torrent added via `startTorrent()`.
+
+**Not touched (per brief scope):**
+- Transcoder fallback logic (separate finding, another agent)
+- `packages/shared` types (no new cross-process contract needed)
+- Config surface beyond `STREAM_FIRST_BYTE_TIMEOUT_MS`
+- Indexer adapters, web files
