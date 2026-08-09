@@ -13,6 +13,10 @@ interface Props {
   sessionId: string | null;
   subtitle?: SubtitleTrack | null;
   infoHash?: string;
+  /** IMDb id — forwarded to the server so the initial LOAD payload enumerates
+   *  OpenSubtitles tracks alongside torrent-embedded ones. Without this the
+   *  receiver won't know about any OS tracks and can't hot-swap to them. */
+  imdbId?: string;
   /** When true, cast errors surface a "stream URL may have expired" message
    *  instead of the generic error text. Used for Stremio HTTP-stream sessions. */
   stremioHttpStream?: boolean;
@@ -25,6 +29,28 @@ interface Props {
   onOpenChange?: (open: boolean) => void;
 }
 
+/** URL suffix used to identify the initially-active subtitle on the server.
+ *  Must match the shape the server builds in urlForSubtitle() so the
+ *  `t.url.endsWith(subtitlePath)` check picks the right track. */
+function subtitlePathFor(
+  subtitle: SubtitleTrack,
+  infoHash: string | undefined,
+): string | null {
+  if (subtitle.source === "torrent") {
+    if (!infoHash) return null;
+    return `/stream/${infoHash}/subtitles/${subtitle.index}`;
+  }
+  return `/api/subtitles/opensubtitles/${subtitle.fileId}`;
+}
+
+function subtitleLanguage(subtitle: SubtitleTrack): string {
+  return subtitle.language;
+}
+
+function subtitleDisplayName(subtitle: SubtitleTrack): string {
+  return subtitle.source === "torrent" ? subtitle.language : subtitle.languageName;
+}
+
 export function CastBar({
   streamPath,
   title,
@@ -34,6 +60,7 @@ export function CastBar({
   sessionId,
   subtitle,
   infoHash,
+  imdbId,
   stremioHttpStream = false,
   open: controlledOpen,
   onOpenChange,
@@ -54,21 +81,25 @@ export function CastBar({
   });
 
   const playOn = useMutation({
-    mutationFn: (device: CastDevice) =>
-      api.castPlay({
+    mutationFn: (device: CastDevice) => {
+      const subtitleFields =
+        subtitle && subtitlePathFor(subtitle, infoHash)
+          ? {
+              subtitlePath: subtitlePathFor(subtitle, infoHash)!,
+              subtitleLanguage: subtitleLanguage(subtitle),
+              subtitleName: subtitleDisplayName(subtitle),
+            }
+          : {};
+      return api.castPlay({
         deviceId: device.id,
         streamPath,
         title,
         ...(posterUrl ? { posterUrl } : {}),
         ...(contentType ? { contentType } : {}),
-        ...(subtitle && infoHash
-          ? {
-              subtitlePath: `/stream/${infoHash}/subtitles/${subtitle.index}`,
-              subtitleLanguage: subtitle.language,
-              subtitleName: subtitle.language,
-            }
-          : {}),
-      }),
+        ...(imdbId ? { imdbId } : {}),
+        ...subtitleFields,
+      });
+    },
     onSuccess: (data) => {
       onSessionChange(data.sessionId);
       setOpen(false);

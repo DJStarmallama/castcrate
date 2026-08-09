@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
-import type { CastAction, SetActiveTracksRequest } from "@castcrate/shared";
+import type { CastAction, SetActiveTracksRequest, SubtitleTrack } from "@castcrate/shared";
 import { listDevices } from "../services/discovery.js";
 import {
   play,
@@ -17,6 +17,35 @@ import { config } from "../lib/config.js";
 import { getMeta, getStatus, setMetaHistoryId } from "../services/torrent.js";
 import { appendHistory } from "../services/history.js";
 import { listSubtitles } from "../services/subtitles.js";
+
+// TrackId namespacing convention:
+//   Torrent-embedded tracks → `index + 1` (typically 1..20)
+//   OpenSubtitles tracks   → `10_000 + offset` (10_000..)
+// Two separate ranges keeps them non-colliding while remaining stable per
+// cast session (the OS results are cached for an hour, so the offset order
+// is stable across a session lifetime). The `+1` on the torrent side
+// preserves the pre-existing convention (0 is reserved because some
+// Chromecast firmware treats trackId 0 as "no active track").
+export const OS_TRACK_ID_BASE = 10_000;
+
+function trackIdForSubtitle(track: SubtitleTrack, osOffset: number): number {
+  if (track.source === "torrent") return track.index + 1;
+  // OpenSubtitles — offset is the track's position in the OS result list.
+  return OS_TRACK_ID_BASE + osOffset;
+}
+
+function urlForSubtitle(
+  track: SubtitleTrack,
+  ip: string,
+  port: number,
+  infoHash: string | null,
+): string | null {
+  if (track.source === "torrent") {
+    if (!infoHash) return null;
+    return `http://${ip}:${port}/stream/${infoHash}/subtitles/${track.index}`;
+  }
+  return `http://${ip}:${port}/api/subtitles/opensubtitles/${track.fileId}`;
+}
 
 // Extract infoHash from a streamPath like "/stream/abc123" or
 // "/stream/abc123/transcoded". Returns null if the path doesn't match.
@@ -41,9 +70,15 @@ interface PlayBody {
   title?: string;
   posterUrl?: string;
   contentType?: string;
+  /** URL path for a subtitle track (torrent-embedded OR OpenSubtitles) to
+   *  activate at cast start. When set, must match the URL suffix of one of
+   *  the enumerated tracks. Empty / missing = subtitles off at start. */
   subtitlePath?: string;
   subtitleLanguage?: string;
   subtitleName?: string;
+  /** IMDb id — enables the OpenSubtitles fallback branch on cast start
+   *  (same as the /stream/:hash/subtitles?imdbId=… query on the picker). */
+  imdbId?: string;
 }
 
 interface ControlBody {
@@ -65,6 +100,7 @@ export async function castRoutes(app: FastifyInstance) {
       subtitlePath,
       subtitleLanguage,
       subtitleName,
+      imdbId,
     } = req.body ?? {};
     if (!deviceId || !streamPath || !title) {
       return reply.code(400).send({
@@ -102,32 +138,47 @@ export async function castRoutes(app: FastifyInstance) {
         ...(contentType ? { contentType } : {}),
       };
 
-      // Enumerate ALL subtitle tracks on the torrent upfront, so the
-      // receiver can later hot-swap between them via EDIT_TRACKS_INFO
-      // without a LOAD/reload. Only applies to torrent-backed sessions
-      // (streamPath = /stream/:hash/...); HTTP-stream sessions (Stremio
-      // debrid) have no on-disk subtitle files, and honour only the
-      // explicit subtitlePath if the client attached one.
+      // Enumerate ALL subtitle tracks on the torrent (plus OpenSubtitles if
+      // an imdbId was supplied) upfront, so the receiver can later hot-swap
+      // between them via EDIT_TRACKS_INFO without a LOAD/reload. Only applies
+      // to torrent-backed sessions (streamPath = /stream/:hash/...);
+      // HTTP-stream sessions (Stremio debrid) have no on-disk subtitle files
+      // and honour only the explicit subtitlePath if the client attached one.
       //
-      // trackId convention: subtitle.index + 1 (see PlayTrack.trackId in
-      // services/cast.ts — 0 is avoided because some receivers dislike it
-      // as an active id). The client mirrors this arithmetic when POSTing
-      // to /api/cast/sessions/:id/tracks.
+      // trackId namespaces (see OS_TRACK_ID_BASE / trackIdForSubtitle above):
+      //   - Torrent-embedded → `index + 1`
+      //   - OpenSubtitles    → `10_000 + offset` in the OS result list
+      // The client mirrors this arithmetic when POSTing to
+      // /api/cast/sessions/:id/tracks.
       //
       // FALLBACK NOTE: if the torrent is stopped mid-cast, the subtitle
       // stream URLs become unreachable and the Chromecast silently drops
-      // the track. Tracked separately as "Subtitle track has no fallback
-      // if torrent disappears mid-cast" — not handled here.
+      // the track. OpenSubtitles URLs remain reachable (served from disk
+      // cache), so switching OS→OS still works after torrent removal. See
+      // "Subtitle track has no fallback if torrent disappears mid-cast".
       const infoHash = infoHashFromStreamPath(streamPath);
       if (infoHash) {
-        const tracks = await listSubtitles(infoHash);
+        const listOpts: Parameters<typeof listSubtitles>[1] = {};
+        if (imdbId) listOpts.imdbId = imdbId;
+        const tracks = await listSubtitles(infoHash, listOpts);
         if (tracks.length > 0) {
-          params.tracks = tracks.map<PlayTrack>((t) => ({
-            trackId: t.index + 1,
-            url: `http://${ip!}:${config.port}/stream/${infoHash}/subtitles/${t.index}`,
-            language: t.language,
-            name: t.language,
-          }));
+          let osOffset = 0;
+          params.tracks = tracks.map<PlayTrack>((t) => {
+            const url = urlForSubtitle(t, ip!, config.port, infoHash);
+            const trackId = trackIdForSubtitle(
+              t,
+              t.source === "opensubtitles" ? osOffset++ : 0,
+            );
+            const label = t.source === "opensubtitles" ? t.languageName : t.language;
+            return {
+              trackId,
+              // url can't be null here — torrent tracks always have an
+              // infoHash; OS tracks build absolute URLs unconditionally.
+              url: url!,
+              language: t.language,
+              name: label,
+            };
+          });
         }
       } else if (subtitlePath) {
         // HTTP-stream fallback: honour the explicit subtitlePath passed by
@@ -147,7 +198,7 @@ export async function castRoutes(app: FastifyInstance) {
       // If the caller passed a specific subtitlePath, activate that track
       // at start; otherwise the receiver loads with subtitles off (empty
       // activeTrackIds — required, not undefined). Match by URL suffix so
-      // both branches above work.
+      // both torrent (/stream/…) and OS (/api/subtitles/…) shapes work.
       if (subtitlePath && params.tracks) {
         const wanted = params.tracks.find((t) => t.url.endsWith(subtitlePath));
         if (wanted) params.initialActiveTrackId = wanted.trackId;

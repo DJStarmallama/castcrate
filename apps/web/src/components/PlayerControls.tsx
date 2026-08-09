@@ -40,6 +40,8 @@ interface Props {
   subtitleContext?: string;
 
   infoHash: string | null;
+  /** IMDb id — enables OpenSubtitles fallback in SubtitlePicker/CastBar. */
+  imdbId?: string;
   subtitle: SubtitleTrack | null;
   onSubtitleChange: (t: SubtitleTrack | null) => void;
   castSessionId: string | null;
@@ -87,6 +89,7 @@ export function PlayerControls(props: Props) {
     title,
     subtitleContext,
     infoHash,
+    imdbId,
     subtitle,
     onSubtitleChange,
     castSessionId,
@@ -405,6 +408,7 @@ export function PlayerControls(props: Props) {
           {infoHash && (
             <SubtitlePicker
               infoHash={infoHash}
+              imdbId={imdbId}
               selected={subtitle}
               onSelect={onSubtitleChange}
               castSessionId={castSessionId}
@@ -421,6 +425,7 @@ export function PlayerControls(props: Props) {
             onSessionChange={onCastSessionChange}
             subtitle={subtitle}
             infoHash={infoHash ?? undefined}
+            imdbId={imdbId}
             stremioHttpStream={stremioHttpStream}
             open={castOpen}
             onOpenChange={setCastOpen}
