@@ -1,7 +1,14 @@
 # knaben-fallback — Context
 
-**Last updated:** 2026-05-09
+**Last updated:** 2026-08-09
 **Status:** Implemented (retrospective doc)
+
+## 2026-08-09 — IndexerAdapter registration
+
+- `services/knaben.ts` now exports `knabenAdapter: IndexerAdapter` (supports all three kinds: movie, episode, seasonPack) at the bottom of the file.
+- `routes/torrents.ts` places it after Stremio in `movieChain` and `episodeChain`, and after EZTV in `seasonPackChain`; the inline `if (results.length === 0 && settings.sourceEnabled.knaben)` fallback blocks are gone.
+- The adapter uses a private `KnabenTaggedError` + `formatThrown` hook to preserve the exact wire error prefixes the old route emitted (`knaben:`, `knaben (episode):`, `knaben (pack):`) — client-side error parsing sees no difference.
+- `searchKnabenMovie/Episode/SeasonPack()` function exports are unchanged; existing tests keep working.
 
 ## Status
 

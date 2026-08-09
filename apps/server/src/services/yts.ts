@@ -3,6 +3,8 @@ import type { TorrentResult } from "@castcrate/shared";
 import type { RequestInit as UndiciRequestInit } from "undici";
 import { config } from "../lib/config.js";
 import { getDispatcher } from "../lib/proxy.js";
+import type { IndexerAdapter } from "../lib/indexers.js";
+import { getSettings } from "./settings.js";
 
 const TRACKERS = [
   "udp://open.demonii.com:1337/announce",
@@ -134,3 +136,21 @@ export async function searchTorrents(title: string, year?: number): Promise<Torr
   cache.set(key, results);
   return results;
 }
+
+// ---------------------------------------------------------------------------
+// IndexerAdapter registration — see apps/server/src/lib/indexers.ts. The
+// underlying `searchTorrents()` export above is unchanged so existing tests
+// and callers keep working. This wrapper is what `runFallback()` sees.
+// ---------------------------------------------------------------------------
+
+export const ytsAdapter: IndexerAdapter = {
+  name: "yts",
+  supportsMovie: true,
+  supportsEpisode: false,
+  supportsSeasonPack: false,
+  enabled: () => getSettings().sourceEnabled.yts,
+  searchMovie: async (query) => {
+    const results = await searchTorrents(query.title, query.year);
+    return { results };
+  },
+};

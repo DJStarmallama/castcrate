@@ -31,6 +31,22 @@ export interface SeriesEpisode {
   overview: string;
 }
 
+/** Per-adapter row emitted by the server's indexer fallback chain — server-side
+ *  only for now. The `/api/search/torrents*` HTTP responses currently expose
+ *  only the flat `tried: string[]` (adapter names in visit order) for backward
+ *  compat with the web client's `extractTried()` parser. */
+export interface TriedEntry {
+  /** Adapter identifier — matches `TorrentResult.source` where applicable. */
+  name: string;
+  /** Number of results this adapter produced. */
+  count: number;
+  /** Populated when the adapter threw. Kept structured to preserve the mixed
+   *  string/object error shape today's route surfaces to the client. */
+  error?:
+    | string
+    | { source: string; code: string; addonId?: string; addonName?: string };
+}
+
 export interface TorrentResult {
   title: string;
   magnet: string;

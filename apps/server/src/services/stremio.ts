@@ -10,6 +10,7 @@ import {
 } from "../lib/quality.js";
 import { getDispatcher } from "../lib/proxy.js";
 import { getSettings } from "./settings.js";
+import type { IndexerAdapter } from "../lib/indexers.js";
 
 // ---------------------------------------------------------------------------
 // Fallback tracker list — mirrors what knaben.ts uses in buildMagnet().
@@ -492,3 +493,56 @@ export async function searchStremioEpisode(
 }
 
 export { FALLBACK_TRACKERS };
+
+// ---------------------------------------------------------------------------
+// IndexerAdapter registration. Stremio is a fan-out adapter — a single call
+// queries N configured addons, and per-addon failures come back alongside
+// partial results via `AdapterOutcome.errors[]`. The route used to expand
+// these into per-addon entries in the flat `errors[]`; `runFallback` does
+// that expansion generically now.
+//
+// Gates:
+//   - Movie:    requires imdbId AND at least one enabled addon.
+//   - Episode:  requires imdbId AND at least one enabled addon.
+// Movie enablement additionally checks imdbId — the query-time enabled hook
+// only checks the addon list, so route callers must skip Stremio for movies
+// when imdbId isn't present. To keep that responsibility in one place, we
+// short-circuit inside `searchMovie` too.
+// ---------------------------------------------------------------------------
+
+export const stremioAdapter: IndexerAdapter = {
+  name: "stremio",
+  supportsMovie: true,
+  supportsEpisode: true,
+  supportsSeasonPack: false,
+  // Two conditions must hold for Stremio to have anything to search: at
+  // least one addon must be enabled, and the query must carry an imdbId
+  // (Stremio's stream endpoints are IMDb-keyed). Movie queries where
+  // imdbId is absent short-circuit here so Stremio isn't added to
+  // `tried[]` — this matches the old route which only pushed "stremio"
+  // when both conditions held.
+  enabled: (query) => {
+    if (!getSettings().stremioAddons.some((a) => a.enabled)) return false;
+    if ("imdbId" in query && query.imdbId) return true;
+    // Episode/SeasonPack queries always have imdbId (typed as string, not
+    // optional), so the imdbId check above covers the MovieQuery-with-
+    // undefined-imdbId case only.
+    if ("season" in query) return true;
+    return false;
+  },
+  searchMovie: async (query) => {
+    // `enabled()` gate guarantees imdbId is present, but keep the guard
+    // to satisfy TS narrowing.
+    if (!query.imdbId) return { results: [], errors: [] };
+    const outcome = await searchStremioMovie(query.imdbId);
+    return { results: outcome.results, errors: outcome.errors };
+  },
+  searchEpisode: async (query) => {
+    const outcome = await searchStremioEpisode(
+      query.imdbId,
+      query.season,
+      query.episode,
+    );
+    return { results: outcome.results, errors: outcome.errors };
+  },
+};

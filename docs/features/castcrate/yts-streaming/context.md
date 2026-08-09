@@ -1,7 +1,13 @@
 # yts-streaming — Context
 
-**Last updated:** 2026-05-09
+**Last updated:** 2026-08-09
 **Status:** Implemented (retrospective doc)
+
+## 2026-08-09 — IndexerAdapter registration
+
+- `services/yts.ts` now exports `ytsAdapter: IndexerAdapter` at the bottom of the file (`name: "yts"`, `supportsMovie: true`).
+- `routes/torrents.ts` registers it as the first entry in `movieChain` and calls the shared `runFallback()` from `lib/indexers.ts` — the inline `if (settings.sourceEnabled.yts) { tried.push("yts"); ... }` code is gone.
+- `searchTorrents()` function export is unchanged; existing tests keep working.
 
 ## Status
 
