@@ -36,6 +36,9 @@ class MockClient {
     return null;
   }
 
+  // Crash-safety listener wired in getClient() — no-op mock is fine.
+  on(_event: string, _cb: (err: Error) => void): void {}
+
   destroy(cb?: () => void): void {
     if (cb) cb();
   }

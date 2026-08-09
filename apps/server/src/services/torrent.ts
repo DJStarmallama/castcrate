@@ -67,7 +67,19 @@ async function getClient(): Promise<WtClient> {
         default: new () => WtClient;
       };
       const WebTorrent = mod.default;
-      return new WebTorrent();
+      const client = new WebTorrent();
+      // Crash-safety: WebTorrent emits 'error' on the client itself for
+      // torrent-level failures that don't have a per-torrent listener
+      // (duplicate add, tracker meltdown, etc.). Without this handler
+      // Node's default 'unhandled error event' behaviour kills the process.
+      // Log and swallow — the caller that triggered the add already got a
+      // per-torrent error via the promise chain in startTorrent().
+      (client as unknown as {
+        on(event: "error", cb: (err: Error) => void): void;
+      }).on("error", (err: Error) => {
+        console.error("[webtorrent client]", err.message);
+      });
+      return client;
     })();
   }
   return clientPromise;
@@ -121,90 +133,109 @@ export async function startTorrent(
 ): Promise<TorrentSession> {
   const client = await getClient();
 
-  // Best-effort fast path for magnet strings — skip for Buffer inputs and let
-  // webtorrent's own duplicate handling take care of deduplication.
+  // Duplicate-guard fast path for magnet strings. webtorrent's client.add()
+  // throws "Cannot add duplicate torrent" if the same infoHash is already
+  // in the client — that error emits on the WebTorrent instance itself,
+  // and previously crashed the process. Even with the client-level 'error'
+  // handler in getClient(), we still want retries after a metadata timeout
+  // to *join* the in-flight fetch rather than start a second add.
+  //
+  // Case-fix: magnet URIs typically encode infoHash uppercase (e.g.
+  // C3169C3993C21CE6...) while torrent.infoHash from webtorrent is lowercase
+  // (c3169c3993c21ce6...). Without .toLowerCase() the guard silently misses.
   if (typeof input === "string") {
+    const magnetLC = input.toLowerCase();
     for (const t of client.torrents) {
-      if (input.includes(t.infoHash)) {
-        const f = pickVideoFile(t.files);
-        if (f) {
-          return {
-            infoHash: t.infoHash,
-            name: t.name,
-            videoName: f.name,
-            videoLength: f.length,
-          };
-        }
+      if (magnetLC.includes(t.infoHash.toLowerCase())) {
+        // Reuse the existing torrent — whether it's already ready (files
+        // populated) or still fetching metadata (files == []). The
+        // finalize/ready wait inside awaitVideoFile handles both.
+        return awaitVideoFile(t, opts);
       }
     }
   }
 
   return new Promise<TorrentSession>((resolve, reject) => {
+    // sequentialDownload: stream the head of the file before the tail —
+    // required for in-progress playback and byte-range requests to work.
+    client.add(input, { path: config.downloadPath, sequentialDownload: true }, (torrent) => {
+      awaitVideoFile(torrent, opts).then(resolve, reject);
+    });
+  });
+}
+
+/**
+ * Wait for a torrent to expose its video file, then resolve a TorrentSession.
+ * Called from both the fresh-add path and the duplicate-guard fast path
+ * (retry after metadata timeout, etc.). Safe to call multiple times on the
+ * same torrent — each caller gets its own timeout + listener attachment.
+ */
+function awaitVideoFile(
+  torrent: WtTorrent,
+  opts?: { fileIdx?: number },
+): Promise<TorrentSession> {
+  return new Promise<TorrentSession>((resolve, reject) => {
     const timeout = setTimeout(
       () => reject(new Error("Timed out waiting for torrent metadata (60s)")),
       60_000,
     );
-    // sequentialDownload: stream the head of the file before the tail —
-    // required for in-progress playback and byte-range requests to work.
-    client.add(input, { path: config.downloadPath, sequentialDownload: true }, (torrent) => {
-      // Belt-and-braces meta cleanup — normally removeTorrent() clears the map,
-      // but webtorrent can emit 'close' from its own error paths (client
-      // destroy, torrent-level unrecoverable error, etc.). Without this the
-      // meta entry leaks for the process lifetime.
-      torrent.once("close", () => {
-        meta.delete(torrent.infoHash);
-      });
-      const finalize = () => {
-        let file: WtFile | null = null;
+    // Belt-and-braces meta cleanup — normally removeTorrent() clears the map,
+    // but webtorrent can emit 'close' from its own error paths (client
+    // destroy, torrent-level unrecoverable error, etc.). Without this the
+    // meta entry leaks for the process lifetime.
+    torrent.once("close", () => {
+      meta.delete(torrent.infoHash);
+    });
+    const finalize = () => {
+      let file: WtFile | null = null;
 
-        // Honour an explicit fileIdx when provided and in range.
-        const fileIdx = opts?.fileIdx;
-        if (typeof fileIdx === "number") {
-          if (fileIdx >= 0 && fileIdx < torrent.files.length) {
-            file = torrent.files[fileIdx] ?? null;
-          } else {
-            // Out of range — warn and fall through to heuristic.
-            console.warn(
-              `startTorrent: fileIdx ${fileIdx} is out of range (torrent has ${torrent.files.length} files) — falling back to largest video file`,
-            );
-          }
+      // Honour an explicit fileIdx when provided and in range.
+      const fileIdx = opts?.fileIdx;
+      if (typeof fileIdx === "number") {
+        if (fileIdx >= 0 && fileIdx < torrent.files.length) {
+          file = torrent.files[fileIdx] ?? null;
+        } else {
+          // Out of range — warn and fall through to heuristic.
+          console.warn(
+            `startTorrent: fileIdx ${fileIdx} is out of range (torrent has ${torrent.files.length} files) — falling back to largest video file`,
+          );
         }
+      }
 
-        // Fall back to heuristic when fileIdx is absent or was out of range.
-        if (!file) {
-          file = pickVideoFile(torrent.files);
-        }
+      // Fall back to heuristic when fileIdx is absent or was out of range.
+      if (!file) {
+        file = pickVideoFile(torrent.files);
+      }
 
-        if (!file) {
-          clearTimeout(timeout);
-          reject(new Error("No video file found in torrent"));
-          return;
-        }
-        for (const f of torrent.files) f.deselect();
-        file.select(1);
+      if (!file) {
         clearTimeout(timeout);
-        const session: TorrentSession = {
-          infoHash: torrent.infoHash,
-          name: torrent.name,
-          videoName: file.name,
-          videoLength: file.length,
-        };
-        resolve(session);
+        reject(new Error("No video file found in torrent"));
+        return;
+      }
+      for (const f of torrent.files) f.deselect();
+      file.select(1);
+      clearTimeout(timeout);
+      const session: TorrentSession = {
+        infoHash: torrent.infoHash,
+        name: torrent.name,
+        videoName: file.name,
+        videoLength: file.length,
       };
-      if (torrent.ready) finalize();
-      else torrent.once("ready", finalize);
-      // Persistent listener — post-ready errors (e.g. EROFS from a
-      // sandbox-blocked write path) still need to reach the journal, even
-      // after the setup promise resolved. `reject` after `resolve` is a no-op,
-      // which is fine; the console.error is the load-bearing bit — without
-      // it, torrents die silently and the UI hangs to a 30s stream timeout
-      // while journalctl shows nothing.
-      torrent.on("error", (err) => {
-        clearTimeout(timeout);
-        const e = err ?? new Error("torrent error");
-        console.error(`[torrent ${torrent.infoHash}] runtime error:`, e);
-        reject(e);
-      });
+      resolve(session);
+    };
+    if (torrent.ready) finalize();
+    else torrent.once("ready", finalize);
+    // Persistent listener — post-ready errors (e.g. EROFS from a
+    // sandbox-blocked write path) still need to reach the journal, even
+    // after the setup promise resolved. `reject` after `resolve` is a no-op,
+    // which is fine; the console.error is the load-bearing bit — without
+    // it, torrents die silently and the UI hangs to a 30s stream timeout
+    // while journalctl shows nothing.
+    torrent.on("error", (err) => {
+      clearTimeout(timeout);
+      const e = err ?? new Error("torrent error");
+      console.error(`[torrent ${torrent.infoHash}] runtime error:`, e);
+      reject(e);
     });
   });
 }
