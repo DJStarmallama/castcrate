@@ -14,7 +14,16 @@ interface CastClosedMsg {
   type: "cast:closed";
   sessionId: string;
 }
-type ServerMsg = TorrentListMsg | CastStatusMsg | CastStatusMsg | CastClosedMsg;
+interface CastDisconnectedMsg {
+  type: "cast:disconnected";
+  sessionId: string;
+  deviceName: string;
+}
+type ServerMsg =
+  | TorrentListMsg
+  | CastStatusMsg
+  | CastClosedMsg
+  | CastDisconnectedMsg;
 
 /**
  * Open a single WebSocket to /ws on app mount and route server-pushed events
@@ -44,6 +53,21 @@ export function useWsBridge(): void {
           } else if (msg.type === "cast:status") {
             const id = msg.session?.sessionId;
             if (id) qc.setQueryData(["cast-session", id], msg.session);
+          } else if (msg.type === "cast:disconnected") {
+            // The server also broadcasts a `cast:status` with status:
+            // "disconnected" right after, so the cache will end up with the
+            // full disconnected snapshot either way. Merge here defensively
+            // in case the status message is dropped or arrives first with
+            // stale data.
+            qc.setQueryData<Record<string, unknown> | undefined>(
+              ["cast-session", msg.sessionId],
+              (prev) => ({
+                ...(prev ?? {}),
+                sessionId: msg.sessionId,
+                deviceName: msg.deviceName,
+                status: "disconnected",
+              }),
+            );
           } else if (msg.type === "cast:closed") {
             qc.removeQueries({ queryKey: ["cast-session", msg.sessionId] });
           }

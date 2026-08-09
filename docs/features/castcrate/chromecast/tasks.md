@@ -1,7 +1,7 @@
 # chromecast — Tasks
 
-**Last updated:** 2026-05-09
-**Progress:** Implemented (retrospective)
+**Last updated:** 2026-08-09
+**Progress:** Implemented (retrospective) + heartbeat pass 2026-08-09
 
 ## Original implementation (completed)
 
@@ -19,8 +19,8 @@
 ## Future enhancements
 
 ### High priority
-- [ ] Session heartbeat — drop stale sessions after N seconds of no status tick
-- [ ] WebSocket push for cast state (replace 1s poll); plugin already registered
+- [x] Session heartbeat — 30s `getStatus` probe, 5s per-probe timeout, 2 failures → `status = "disconnected"` + `cast:disconnected` WS event; web banner + Stop button; 10s poll frozen on disconnect. (2026-08-09)
+- [x] WebSocket push for cast state — `cast:status`/`cast:closed` broadcast from `services/cast.ts` since Phase 6/7; `useWsBridge.ts` on the client. (Retained slow safety-net poll.)
 
 ### Medium priority
 - [ ] Multi-session support (e.g. concurrent Chromecasts in different rooms)

@@ -17,7 +17,9 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
     queryFn: () => api.castSession(sessionId),
     // WebSocket bridge pushes cast:status events into this cache key.
     // Slow safety-net poll covers the case where the WS drops.
-    refetchInterval: 10_000,
+    // Once the server flips this session to "disconnected", polling would
+    // just keep 404-ing (or worse, resurrect a stale ok response); freeze it.
+    refetchInterval: (q) => (q.state.data?.status === "disconnected" ? false : 10_000),
   });
 
   const ctrl = useMutation({
@@ -31,11 +33,16 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
   });
 
   const stop = useMutation({
+    // On the disconnected path the server short-circuits stop into a local
+    // cleanup that always succeeds. onSettled instead of onSuccess so the
+    // UI unmounts even if the mutation somehow throws — the user always
+    // needs an escape from the banner.
     mutationFn: () => api.castControl(sessionId, "stop"),
-    onSuccess: onStop,
+    onSettled: onStop,
   });
 
   const data = session.data;
+  const isDisconnected = data?.status === "disconnected";
   const isPaused = data?.status === "paused";
   const isBuffering = data?.status === "buffering";
   const currentTime = data?.currentTime ?? 0;
@@ -84,9 +91,32 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
       <div>
         <h3 className="text-2xl font-semibold">{movie.title}</h3>
         <p className="mt-2 text-sm text-zinc-400">
-          {isBuffering ? "Buffering on Chromecast…" : "Casting to Chromecast"}
+          {isDisconnected
+            ? "Connection lost"
+            : isBuffering
+              ? "Buffering on Chromecast…"
+              : "Casting to Chromecast"}
         </p>
       </div>
+
+      {isDisconnected && (
+        <div className="w-full max-w-md rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-left">
+          <p className="text-sm font-medium text-amber-200">
+            Chromecast{data?.deviceName ? ` (${data.deviceName})` : ""} disconnected
+          </p>
+          <p className="mt-1 text-xs text-amber-300/80">
+            The device is unreachable — it may be powered off, on a different
+            network, or restarting. Stop to clear the session, then reconnect.
+          </p>
+          <button
+            onClick={() => stop.mutate()}
+            disabled={stop.isPending}
+            className="mt-3 rounded-full bg-red-500 px-4 py-2 text-sm font-medium text-black hover:bg-red-400 disabled:opacity-60"
+          >
+            {stop.isPending ? "Stopping…" : "Stop cast"}
+          </button>
+        </div>
+      )}
 
       {/* Seek bar */}
       <div className="w-full">
@@ -101,7 +131,7 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
             setOptimisticSeek(v);
             ctrl.mutate({ action: "seek", value: v });
           }}
-          disabled={disableSeek || duration === 0}
+          disabled={disableSeek || duration === 0 || isDisconnected}
           aria-label="Seek"
           className="w-full accent-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
         />
@@ -120,14 +150,15 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
             setOptimisticSeek(v);
             ctrl.mutate({ action: "seek", value: v });
           }}
-          disabled={disableSeek}
+          disabled={disableSeek || isDisconnected}
           title="Skip back 10s"
         >
           <SkipBack />
         </IconButton>
         <button
           onClick={() => ctrl.mutate({ action: isPaused ? "play" : "pause" })}
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-zinc-100 text-black hover:bg-white"
+          disabled={isDisconnected}
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-zinc-100 text-black hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
           aria-label={isPaused ? "Play" : "Pause"}
         >
           {isPaused ? <Play /> : <Pause />}
@@ -138,7 +169,7 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
             setOptimisticSeek(v);
             ctrl.mutate({ action: "seek", value: v });
           }}
-          disabled={disableSeek}
+          disabled={disableSeek || isDisconnected}
           title="Skip forward 10s"
         >
           <SkipForward />
@@ -149,6 +180,7 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
       <div className="flex w-full max-w-sm items-center gap-3">
         <IconButton
           onClick={() => ctrl.mutate({ action: muted ? "unmute" : "mute" })}
+          disabled={isDisconnected}
           title={muted ? "Unmute" : "Mute"}
         >
           {muted ? <VolumeMuted /> : volumeLevel > 0.5 ? <VolumeFull /> : <VolumeLow />}
@@ -164,14 +196,15 @@ export function CastControls({ movie, sessionId, onStop, disableSeek = false }: 
             setOptimisticVolume(v);
             ctrl.mutate({ action: "volume", value: v });
           }}
+          disabled={isDisconnected}
           aria-label="Volume"
-          className="flex-1 accent-emerald-500"
+          className="flex-1 accent-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
         />
       </div>
 
       <button
         onClick={() => stop.mutate()}
-        className="mt-2 rounded-full bg-red-500 px-6 py-3 font-medium text-black hover:bg-red-400"
+        className="mt-2 rounded-full bg-red-500 px-6 py-3 font-medium text-black hover:bg-red-400 disabled:opacity-60"
         disabled={stop.isPending}
       >
         {stop.isPending ? "Stopping…" : "Stop cast"}

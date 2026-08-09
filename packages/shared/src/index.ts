@@ -73,10 +73,20 @@ export interface TorrentStatus {
   done: boolean;
 }
 
+export type CastSessionState =
+  | "buffering"
+  | "playing"
+  | "paused"
+  | "stopped"
+  /** Server-side heartbeat has failed N consecutive times — the receiver is
+   *  unreachable (device powered off, LAN disconnected, Chromecast rebooted).
+   *  UI should surface a banner and stop polling. */
+  | "disconnected";
+
 export interface CastSession {
   sessionId: string;
   deviceId: string;
-  status: "buffering" | "playing" | "paused" | "stopped";
+  status: CastSessionState;
 }
 
 export type CastAction = "play" | "pause" | "stop" | "seek" | "volume" | "mute" | "unmute";
@@ -84,7 +94,9 @@ export type CastAction = "play" | "pause" | "stop" | "seek" | "volume" | "mute" 
 export interface CastSessionStatus {
   sessionId: string;
   deviceId: string;
-  status: "buffering" | "playing" | "paused" | "stopped";
+  /** Friendly device name — useful for disconnect banners on the client. */
+  deviceName: string;
+  status: CastSessionState;
   currentTime: number;
   duration: number;
   volumeLevel: number;
