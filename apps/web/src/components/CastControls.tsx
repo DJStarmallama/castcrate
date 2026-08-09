@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { MovieDetails } from "@castcrate/shared";
 import { api } from "../lib/api";
+import { formatTime } from "../lib/format";
 
 interface Props {
   movie: MovieDetails;
@@ -235,16 +236,6 @@ function IconButton({
       {children}
     </button>
   );
-}
-
-function formatTime(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
-  const s = Math.floor(seconds);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-  return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
 const ICON: React.SVGProps<SVGSVGElement> = {

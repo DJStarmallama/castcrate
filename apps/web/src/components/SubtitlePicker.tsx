@@ -10,6 +10,14 @@ interface Props {
   /** When set, subtitle changes are also pushed to the Chromecast receiver
    *  via EDIT_TRACKS_INFO — no reload, no playback interruption. */
   castSessionId?: string | null;
+  /**
+   * Optional controlled open state. When provided, the parent owns the flag
+   * — used by PlayerControls so the bar's auto-hide can pause while the
+   * menu is open, and so the "C" keyboard shortcut can imperatively open it.
+   * Without these, the picker keeps its internal open state.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 // trackId convention shared with the server: subtitle.index + 1 (see
@@ -20,8 +28,23 @@ function trackIdFor(track: SubtitleTrack | null): number[] {
   return track ? [track.index + 1] : [];
 }
 
-export function SubtitlePicker({ infoHash, selected, onSelect, castSessionId }: Props) {
-  const [open, setOpen] = useState(false);
+export function SubtitlePicker({
+  infoHash,
+  selected,
+  onSelect,
+  castSessionId,
+  open: controlledOpen,
+  onOpenChange,
+}: Props) {
+  // Controlled/uncontrolled hybrid: if the parent passed `open`, they own it;
+  // otherwise we keep local state. Matches Radix's Popover.Root controlled API.
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
 
   const tracks = useQuery({
     queryKey: ["subtitle-tracks", infoHash],

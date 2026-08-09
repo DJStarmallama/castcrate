@@ -3,10 +3,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import type { MovieDetails } from "@castcrate/shared";
 import { api, type StartTorrentResult, type SubtitleTrack } from "../lib/api";
 import { formatBitsPerSec, formatPercent } from "../lib/format";
-import { CastBar } from "./CastBar";
 import { CastControls } from "./CastControls";
-import { SubtitlePicker } from "./SubtitlePicker";
+import { PlayerControls, type PlayerControlsHandle } from "./PlayerControls";
 import { useLocalState } from "../hooks/useLocalState";
+import { useAutoHide } from "../hooks/useAutoHide";
 import {
   DEAD_SWARM_THRESHOLD_MS,
   isBufferingState,
@@ -31,6 +31,14 @@ export function Player({ movie, session, onClose }: Props) {
   const [subtitle, setSubtitle] = useState<SubtitleTrack | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Force the PlayerControls-facing "video" prop to re-render when the
+  // <video> element actually mounts (the ref alone won't trigger it).
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const setVideoRef = useCallback((el: HTMLVideoElement | null) => {
+    videoRef.current = el;
+    setVideoEl(el);
+  }, []);
 
   // HTTP-stream sessions (Stremio debrid) have infoHash === null.
   // Torrent-based sessions always have a non-null infoHash.
@@ -159,18 +167,128 @@ export function Player({ movie, session, onClose }: Props) {
       v.removeEventListener("canplay", onCanPlay);
       v.removeEventListener("waiting", onWaiting);
     };
-  }, [playUrl, dispatchBuffer]);
+  }, [playUrl, dispatchBuffer, videoEl]);
 
-  // 'F' shortcut toggles fullscreen
+  // ---- auto-hide bar + shortcuts state ----
+
+  // Bar visibility: track whether the video element is playing (so we know
+  // whether to arm the hide timer) and whether any menu/scrub/buffer is
+  // keeping the bar open.
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [subtitleOpen, setSubtitleOpen] = useState(false);
+  const [castOpen, setCastOpen] = useState(false);
+
+  // Bar stays open while any popover is open OR while buffering (so the
+  // user can bail out of a stuck stream mid-buffer).
+  const keepBarOpen = subtitleOpen || castOpen || isBufferingState(bufferState);
+
+  const autoHide = useAutoHide({
+    isPlaying,
+    keepOpen: keepBarOpen,
+  });
+
+  // Track play/pause via the video element for auto-hide invariants.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    // Seed the flag in case play() ran before we attached.
+    setIsPlaying(!v.paused);
+    v.addEventListener("play", onPlay);
+    v.addEventListener("pause", onPause);
+    return () => {
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("pause", onPause);
+    };
+  }, [videoEl]);
+
+  // Container-level mousemove: any activity reveals the bar and re-arms
+  // the hide timer.
+  const onContainerMouseMove = useCallback(() => {
+    autoHide.showNow();
+  }, [autoHide]);
+
+  // Handle for the "C" shortcut → open subtitle menu imperatively.
+  const controlsHandleRef = useRef<PlayerControlsHandle | null>(null);
+
+  // ---- keyboard shortcuts ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "f" || e.key === "F") {
-        if (!(e.target instanceof HTMLInputElement)) toggleFullscreen();
+      if (isEditableTarget(document.activeElement)) return;
+      const v = videoRef.current;
+      // Some shortcuts (Space, arrows) don't need the video element yet — the
+      // fullscreen shortcut still works pre-video. Guard per branch.
+      const showBar = () => autoHide.showNow();
+      switch (e.key) {
+        case " ":
+        case "Spacebar": // legacy IE/Edge
+          if (e.repeat) return;
+          e.preventDefault();
+          if (v) {
+            if (v.paused) void v.play().catch(() => {});
+            else v.pause();
+          }
+          showBar();
+          return;
+        case "ArrowLeft": {
+          if (!v) return;
+          e.preventDefault();
+          const step = e.shiftKey ? 30 : 10;
+          v.currentTime = Math.max(0, v.currentTime - step);
+          showBar();
+          return;
+        }
+        case "ArrowRight": {
+          if (!v) return;
+          e.preventDefault();
+          const step = e.shiftKey ? 30 : 10;
+          const max = Number.isFinite(v.duration) ? v.duration : v.currentTime + step;
+          v.currentTime = Math.min(max, v.currentTime + step);
+          showBar();
+          return;
+        }
+        case "ArrowUp": {
+          if (!v) return;
+          e.preventDefault();
+          v.volume = Math.min(1, v.volume + 0.05);
+          if (v.muted && v.volume > 0) v.muted = false;
+          showBar();
+          return;
+        }
+        case "ArrowDown": {
+          if (!v) return;
+          e.preventDefault();
+          v.volume = Math.max(0, v.volume - 0.05);
+          showBar();
+          return;
+        }
+        case "m":
+        case "M":
+          if (!v) return;
+          e.preventDefault();
+          v.muted = !v.muted;
+          showBar();
+          return;
+        case "c":
+        case "C":
+          e.preventDefault();
+          controlsHandleRef.current?.openSubtitleMenu();
+          showBar();
+          return;
+        case "f":
+        case "F":
+          e.preventDefault();
+          toggleFullscreen();
+          showBar();
+          return;
+        default:
+          return;
       }
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [toggleFullscreen]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [autoHide, toggleFullscreen]);
 
   // Note: torrent removal happens explicitly in handleClose. We don't run
   // a cleanup-on-unmount effect because React StrictMode would fire it on
@@ -233,38 +351,6 @@ export function Player({ movie, session, onClose }: Props) {
             ))}
           </select>
         )}
-        {/* SubtitlePicker only applies to torrent sessions with a known infoHash.
-            castSessionId is forwarded so the picker can hot-swap the receiver
-            track via EDIT_TRACKS_INFO while a cast is active. */}
-        {session.infoHash && (
-          <SubtitlePicker
-            infoHash={session.infoHash}
-            selected={subtitle}
-            onSelect={setSubtitle}
-            castSessionId={castSessionId}
-          />
-        )}
-        <CastBar
-          streamPath={playUrl}
-          title={movie.title}
-          posterUrl={movie.poster}
-          contentType={contentType}
-          sessionId={castSessionId}
-          onSessionChange={setCastSessionId}
-          subtitle={subtitle}
-          infoHash={session.infoHash ?? undefined}
-          stremioHttpStream={isHttpStream}
-        />
-        {!isCasting && (
-          <button
-            onClick={toggleFullscreen}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-            title={isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
-          >
-            {isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
-          </button>
-        )}
         <button
           onClick={handleClose}
           className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
@@ -272,7 +358,12 @@ export function Player({ movie, session, onClose }: Props) {
           Stop & close
         </button>
       </header>
-      <div className="relative flex flex-1 items-center justify-center bg-black">
+      <div
+        className={`relative flex flex-1 items-center justify-center bg-black ${
+          !isCasting && !autoHide.visible ? "cursor-none" : ""
+        }`}
+        onMouseMove={isCasting ? undefined : onContainerMouseMove}
+      >
         {isCasting ? (
           <CastControls
             movie={movie}
@@ -283,15 +374,26 @@ export function Player({ movie, session, onClose }: Props) {
         ) : (
           <>
             <video
-              ref={videoRef}
+              ref={setVideoRef}
               // Force a fresh element when the subtitle track or selected
               // video file changes — <video> caches text tracks aggressively
               // and won't re-fetch a new src on its own.
               key={`${session.infoHash ?? "http"}-${selectedFileIndex ?? "auto"}-${subtitle?.index ?? "none"}`}
               src={playUrl}
-              controls
               autoPlay
               crossOrigin="anonymous"
+              onDoubleClick={toggleFullscreen}
+              onClick={() => {
+                // Click on the video (not on the bar) toggles play/pause,
+                // matching YouTube. Double-click still fires as well; the
+                // browser dispatches click before dblclick — we tolerate the
+                // extra pause-then-resume in the very rare double-click case
+                // (matches Chrome's native controls' own behavior).
+                const v = videoRef.current;
+                if (!v) return;
+                if (v.paused) void v.play().catch(() => {});
+                else v.pause();
+              }}
               className="h-full max-h-full w-full max-w-full"
             >
               {subtitle && session.infoHash && (
@@ -311,6 +413,29 @@ export function Player({ movie, session, onClose }: Props) {
                 state={bufferState}
               />
             )}
+            <PlayerControls
+              videoRef={videoRef}
+              videoElement={videoEl}
+              visible={autoHide.visible}
+              onMouseEnter={autoHide.cancelHide}
+              onMouseLeave={autoHide.scheduleHide}
+              title={movie.title}
+              subtitleContext={session.videoName}
+              infoHash={session.infoHash}
+              subtitle={subtitle}
+              onSubtitleChange={setSubtitle}
+              castSessionId={castSessionId}
+              onCastSessionChange={setCastSessionId}
+              streamPath={playUrl}
+              posterUrl={movie.poster}
+              contentType={contentType}
+              stremioHttpStream={isHttpStream}
+              isFullscreen={isFullscreen}
+              onToggleFullscreen={toggleFullscreen}
+              onSubtitleOpenChange={setSubtitleOpen}
+              onCastOpenChange={setCastOpen}
+              handleRef={controlsHandleRef}
+            />
           </>
         )}
       </div>
@@ -333,6 +458,20 @@ export function Player({ movie, session, onClose }: Props) {
       </footer>
     </div>
   );
+}
+
+/**
+ * True when the currently-focused element is a form input we should not
+ * hijack keyboard shortcuts from. Also excludes contentEditable elements
+ * for good measure (Radix Popover trigger buttons don't set contentEditable,
+ * so they don't false-positive here).
+ */
+function isEditableTarget(el: Element | null): boolean {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if ((el as HTMLElement).isContentEditable) return true;
+  return false;
 }
 
 function ProgressBar({
@@ -429,19 +568,4 @@ function needsAutoTranscode(codec: string | null | undefined): boolean {
   if (!codec) return false;
   const c = codec.toLowerCase();
   return c === "x265" || c === "h265" || c === "hevc" || c === "av1";
-}
-
-function FullscreenIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
-    </svg>
-  );
-}
-function ExitFullscreenIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
-    </svg>
-  );
 }

@@ -191,3 +191,14 @@ Reducer transitions traced by hand for the critical Phase 6 scenario
 (`initial-buffer` → `buffered` → `playing`, overlay dismisses); matches
 expected behavior. Full click-through on the media Mac is deferred to the
 same session that closes tasks.md 6.8 (needs box + browser).
+
+### 2026-08-09 — Netflix-style custom browser controls landed (see `player-controls`)
+
+Split off as a new feature (`docs/features/castcrate/player-controls/`) to
+keep this feature focused on the swarm/buffering UX. The custom control
+layer consumes `useBufferState` (via `isBufferingState`) to keep the bar
+open during buffering but otherwise leaves the reducer untouched. The
+BufferingOverlay renders the same way — pointer-events-none outer, so the
+new bar overlay coexists cleanly. `SubtitlePicker` and `CastBar` now accept
+an optional controlled `open` prop to let the bar's auto-hide gate on
+popover-open state — backwards compatible (uncontrolled fallback preserved).

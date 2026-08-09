@@ -16,6 +16,13 @@ interface Props {
   /** When true, cast errors surface a "stream URL may have expired" message
    *  instead of the generic error text. Used for Stremio HTTP-stream sessions. */
   stremioHttpStream?: boolean;
+  /**
+   * Optional controlled open state. When provided, the parent owns the flag
+   * — used by PlayerControls so the bar's auto-hide can pause while the
+   * device picker is open. Without these, this stays uncontrolled.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function CastBar({
@@ -28,8 +35,17 @@ export function CastBar({
   subtitle,
   infoHash,
   stremioHttpStream = false,
+  open: controlledOpen,
+  onOpenChange,
 }: Props) {
-  const [open, setOpen] = useState(false);
+  // Controlled/uncontrolled hybrid: parent owns `open` if it passed one.
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
 
   const devices = useQuery({
     queryKey: ["cast-devices"],
