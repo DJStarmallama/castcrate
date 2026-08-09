@@ -56,3 +56,13 @@ Out:
 - **`startTorrent` API change ripples.** Anywhere that calls `startTorrent(magnet)` needs to keep working; the change should be additive (overload accepting `Buffer | string`).
 - **Cache by query + cookie hash.** If users share a `~/.castcrate` between accounts (rare but possible), don't serve one user's cached TD results to another. Hash the cookie into the cache key.
 - **No CSRF / referer gotchas yet known.** If TD adds these, the adapter will need to fetch the search page first to harvest tokens.
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **Fallback wiring duplication** — spans yts ↔ knaben ↔ torrentday ↔ stremio — extract `FallbackChain`. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Proxy cache suffix by convention only** — spans proxy ↔ yts ↔ knaben ↔ torrentday ↔ stremio. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Adapter error boundary asymmetric** — spans yts ↔ knaben ↔ torrentday ↔ stremio ↔ proxy. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Sensitive settings write with default umask before `6e4f73e`** — spans proxy ↔ stremio ↔ torrentday — TD creds sit in `~/.castcrate/settings.json`; existing boxes may still be 0o644. Add boot check + hardening audit. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **Selectors HTML-pinned; no live smoke tests; TV fallback silently skipped without `title`** — single TD redesign breaks the adapter with no signal. Commit anonymized HTML fixtures; log warning when TV fallback skips. `/review-feature castcrate/torrentday-indexer`. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

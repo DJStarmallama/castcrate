@@ -76,3 +76,9 @@ The discovery pass surfaced these as repeated themes across phases. Bundling the
 1. Closes a backlog of small risks before they bite.
 2. Establishes test coverage and CI early enough that future features land with a safety net.
 3. Removes brand drift and undocumented env vars before any public release.
+
+## Epic Review Findings (2026-08-09)
+
+- 💳 **Phases A–D still zero-progress despite production deploy** — atomic history writes, ffmpeg cleanup, stream timeouts should have landed before real-hardware casting. Bump to front of the queue; `/proceed castcrate/hardening` for Phase A immediately. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

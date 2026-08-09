@@ -36,3 +36,12 @@
 - **macOS firewall prompts** for incoming cast-control connections on first run. README should mention.
 - **Single-session race.** Two simultaneous `POST /api/cast/play` calls will both succeed and clobber each other. Add a mutex or rejection if it ever matters.
 - **`@fastify/websocket` is registered for `/ws` but unused.** Don't remove — Phase 4+ rely on the plugin being there.
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **Stream URL absolute-vs-relative implicit** — spans yts ↔ chromecast ↔ stremio ↔ transcoding. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Cast session has no heartbeat** — spans chromecast ↔ cast-controls ↔ player-buffer-ux — add 30s heartbeat + WS event. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Subtitle track has no fallback if torrent disappears mid-cast** — spans subtitles ↔ chromecast ↔ player-buffer-ux. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **Single-session model unprotected; no timeout; registered WS unused** — two concurrent `POST /api/cast/play` race the Map; device-off-overnight leaves session forever. Add heartbeat + "cast already active" guard; defer WS migration. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

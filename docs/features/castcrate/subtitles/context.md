@@ -43,3 +43,11 @@
   1. **Enumerate all tracks upfront** at cast start, pass them all to the receiver, then swap `activeTrackIds` via `EDIT_TRACKS_INFO` message (no restart, no blip). Requires the tracks to exist on disk before cast start; today only the one selected in the picker is passed.
   2. **Reload the media** with the new subtitle (uses existing `load()` codepath). Simple, but causes a brief playback interruption + loses seek position unless we re-seek immediately.
   Wiring: SubtitlePicker needs to know about `castSessionId`; when set, call a new `POST /api/cast/sessions/:id/subtitle` instead of just setting local state. Reported by user during `castcrate/media-mac-deploy` P6.4 cast test — "Wish I could trigger subtitles whilst its casting."
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **Subtitle picker is a no-op during active cast** — spans subtitles ↔ cast-controls ↔ player-buffer-ux — enumerate tracks upfront + `editTracksInfo` preferred. Blocks cast completeness. `/review-feature castcrate/subtitles`. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Subtitle track has no fallback if torrent disappears mid-cast** — spans subtitles ↔ chromecast ↔ player-buffer-ux — Chromecast silently loses `/stream/:hash/subtitles/:idx` if torrent is removed; warn or pin. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **No encoding detection; language heuristic; WebTorrent priority not bumped** — non-UTF-8 renders as garbage; picker shows "No subtitles" for minutes. Add `chardet`+`iconv`; `file.select(1)` to bump priority. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

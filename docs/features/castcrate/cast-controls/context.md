@@ -38,3 +38,13 @@
 - **iOS fullscreen forces native chrome.** Our overlay disappears.
 - **No vendor prefixes** — assume modern browsers.
 - **Phase 7 only adds UI/dispatch tweaks.** Don't reorganise cast.ts/discovery.ts here; Phase 3 owns the mDNS + session model.
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **Cast session has no heartbeat** — spans chromecast ↔ cast-controls ↔ player-buffer-ux. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Subtitle picker no-op during cast** — spans subtitles ↔ cast-controls ↔ player-buffer-ux. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Transcoder has no fallback if ffmpeg dies mid-stream** — spans transcoding ↔ player-buffer-ux ↔ cast-controls. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **`type` filter is load-bearing in the OMDb cache key but undocumented** — spans omdb ↔ cast-controls ↔ discovery. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **No optimistic UI on seek/volume; keyboard shortcuts missing; type-filter pills vanish under 3 chars** — sliders snap-back on drag; Space/Arrow/M do nothing; changing filter at 2 chars silently clears it. Optimistic reconcile; keyboard listeners; always render pills (disabled when < 3 chars). Also: interleave behavior for `type=all` is undocumented (add JSDoc + test). (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

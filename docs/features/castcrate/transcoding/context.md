@@ -1,6 +1,6 @@
 # transcoding — Context
 
-**Last updated:** 2026-05-09
+**Last updated:** 2026-08-09
 **Status:** Implemented (limited scope) — retrospective doc
 
 ## Status
@@ -38,3 +38,15 @@
 - **EPIPE swallowed silently** — masks debugging clues.
 - **Smooth toggle stays on if ffmpeg uninstalled.** No re-check on toggle.
 - **No fallback.** ffmpeg fails mid-stream → broken video; no re-attempt.
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **Stremio HTTP-stream sessions bypass history** — spans stremio ↔ library-settings ↔ transcoding. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Stream URL absolute-vs-relative implicit** — spans yts ↔ chromecast ↔ stremio ↔ transcoding. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **mkdirSync-at-module-load** — spans scaffold ↔ yts ↔ library-settings ↔ transcoding. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Torrent-lifecycle idempotency** — spans yts ↔ library-settings ↔ transcoding ↔ player-buffer-ux. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Transcoder has no fallback if ffmpeg dies mid-stream** — spans transcoding ↔ player-buffer-ux ↔ cast-controls — wrap spawn; 502 before first byte so client retries pass-through; UX toast on late failure. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Buffer overlay has no formal state machine** — spans player-buffer-ux ↔ yts ↔ transcoding. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **No auto-transcode probe; ffmpeg subprocesses orphan on SIGKILL; bitrate is global** — HEVC files that slip past filter don't auto-transcode; track `subprocesses: Set<ChildProcess>` and kill in shutdown hook (hardening Phase B). (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

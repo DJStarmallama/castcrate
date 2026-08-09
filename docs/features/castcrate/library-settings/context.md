@@ -36,3 +36,13 @@
 - **`meta` map leaks.** External torrent destruction leaves stale entries until restart.
 - **Smooth-playback toggle survives ffmpeg uninstall.** UI happily allows it; server returns 503 on `/transcoded`.
 - **No hot-reload of `.env`.** Edit + restart.
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **Stremio HTTP-stream sessions bypass history entirely** — spans stremio-addon-source ↔ library-settings ↔ transcoding — Real-Debrid streams return `infoHash: null` and `setMeta()` is skipped; cast-play's `infoHashFromStreamPath()` returns null so nothing appends. Decide: synthetic-id history OR surface the tier explicitly. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **`@castcrate/shared` doesn't mark read-only vs writable settings** — spans library-settings ↔ every feature reading `RuntimeSettings` — no type-level guard against wiring a computed field as PATCH-able. Split into `RuntimeSettingsReadable` and `RuntimeSettingsWritable`. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **mkdirSync-at-module-load** — spans scaffold ↔ yts-streaming ↔ library-settings ↔ transcoding — same deploy-time boot-fragility class of bug. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Torrent-lifecycle idempotency was implicit and untested (the recent crash proved it)** — spans yts-streaming ↔ library-settings ↔ transcoding ↔ player-buffer-ux — add `services/__tests__/torrent.test.ts` for double-delete; annotate DELETE route "Idempotent. Safe to retry." (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **History writes non-atomic; `meta` map can leak; cast-only sessions leave no trace** — write is `writeFile()` not temp+rename; nothing clears `meta` on external kill; history only appends on removal. Land in `hardening` Phase B. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

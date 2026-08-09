@@ -35,3 +35,10 @@
 - **Brand drift.** `LlamaSpitStream` (download path, index.html title) vs `castcrate` (repo, plan). Confusing for new readers.
 - **`mkdirSync` on import.** `lib/config.ts` creates `DOWNLOAD_PATH` at module-load time. Move to first-use if it ever causes import failures.
 - **`.env.example` is incomplete.** Three transcode vars and `YTS_BASE_URL` are read by code but absent from the template.
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **mkdirSync-at-module-load causes cryptic boot failures on bad paths** — spans scaffold ↔ yts-streaming ↔ library-settings ↔ transcoding — the tilde-in-env-file incident during deploy came from `lib/config.ts:mkdirSync(config.downloadPath)` running at import; move behind first-use + surface path-writability in `/api/system/check`. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **Env vars fragmented, `.env.example` incomplete** — `TRANSCODE_BUFFER_PERCENT`/`TRANSCODE_BITRATE`/`FFMPEG_PATH`/`YTS_BASE_URL` read by code but not templated; `YTS_BASE_URL` bypasses `lib/config.ts`. Land in `hardening` Phase A. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

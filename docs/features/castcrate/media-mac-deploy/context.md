@@ -1,6 +1,6 @@
 # media-mac-deploy — Context
 
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09
 
 Running notes / decisions / surprises from executing the runbook. Grow this as things happen; each session, drop a short entry with what was done, what deviated from the plan, and any config that had to be tuned.
 
@@ -135,6 +135,21 @@ The "Starlink CGNAT peer-starvation" diagnosis in the previous entry was **wrong
 
 **Deploy state:** 6.4's crash-fix half is done. Cast test (6.4) still blocked only by player z-index bugs (`castcrate/player-buffer-ux` Phase 6) and needing a real Chromecast. The whole CGNAT bypass workstream is dropped from scope.
 
+### 2026-08-09 — Post-DoD: SIGTERM verified + loudness chain + spam-torrent finding
+
+Deploy runbook is 47/47 ✅ (per prior entries). Post-completion work today logged for the audit trail:
+
+- **SIGTERM shutdown fix (`b48f0b5`) verified in production.** `time sudo systemctl restart castcrate` returned in **0.076 s** — the previous behavior was a 90 s hang until systemd's `TimeoutStopSec` SIGKILL. So the graceful-race pattern (5 s Promise.race + 8 s hard-exit safety net in `apps/server/src/index.ts`) works as designed. Reboots are now clean.
+
+- **Audio loudness chain iterated live against real cast (three commits, all `castcrate/transcoding`):**
+  - `e7f12a3` — first pass: single-stage `loudnorm=I=-16:TP=-1.5:LRA=11`. User feedback: "slightly better".
+  - `254bae8` — chained `acompressor(-24dB, 4:1) → loudnorm(I=-14) → volume=1.5`. Feedback: "better but not amazing".
+  - `6e4f73e` — final: `acompressor(-30dB, 6:1) → loudnorm(I=-10, TikTok-hot) → alimiter(0.95)`. Feedback: "better now" ✅. ~12–14 dB perceived boost vs untreated x264 audio. Ceiling reached — past this point pumping/distortion kicks in; further gain has to come from Chromecast/TV output. **Only affects transcoded streams** (HEVC/AV1 auto route, or Smooth toggle) — direct-play H.264 audio is untouched.
+
+- **Runtime finding: mislabeled/spam torrents survive the picker.** User searched "Evangelion" (IMDb `tt0923811`, correct match), picked a magnet → hash `9d86667f...`, cast to TV → **Spider-Man: Brand New Day** (2026 release) played on screen. Root cause: whichever torrent the indexer returned actually contained mislabeled content. Bytes flowed correctly (206 responses to `/stream/9d86667f...`), the Chromecast overlay showed "Evangelion" metadata, but the video stream was whatever bytes were in that .torrent. **Server-side there is no bug** — this is a torrent-picker UX gap. Actionable follow-up (log against `castcrate/torrentday-indexer` or a new picker feature): the picker should show release-name + seeder-count prominently so users can spot obvious spam before clicking Play. Anime titles specifically are high-risk for spam in a flat "movie" search — anime lives on anime-specific trackers with different naming conventions.
+
+- **Loose end from Aug 8:** `/tmp/box-notes.patch` never got scp'd to laptop, so box-Claude's `docs/box-notes.md` commit is still sitting on branch `docs/box-notes-deploy-diagnostics` locally on the box. Not blocking DoD — the deploy is complete and every finding it captured has been folded into this `context.md` and `tasks.md` — but if you want the box-authored commit in git history, `scp castcrate@192.168.1.249:/tmp/box-notes.patch /tmp/` and `git am` it here.
+
 ### Template
 
 
@@ -171,3 +186,9 @@ The "Starlink CGNAT peer-starvation" diagnosis in the previous entry was **wrong
 - **systemd `EnvironmentFile=` does NOT expand `~`.** A `.env` line like `DOWNLOAD_PATH=~/foo` is fine under a shell but under systemd resolves through `config.ts::expandTilde()` to `<cwd>/~/foo` — outside `ReadWritePaths`, blocked by `ProtectHome=read-only`, torrents die silently on the first piece flush. Use absolute paths in any `.env` a systemd unit will load, and make `ReadWritePaths=` match the *expanded* path exactly.
 - **`~/.castcrate` is unwritable under `ProtectHome=read-only`.** The old `history.ts` hardcoded that path and 500'd on every DELETE. Set `HISTORY_DIR=` (env) to a path inside `ReadWritePaths=` — or use systemd `StateDirectory=castcrate` which hands you `/var/lib/castcrate` for free and adds it to `ReadWritePaths` automatically.
 - **Sandboxed write failures show up as "network problems" if the error handler doesn't log.** Bug A (torrent runtime-error swallow) is what let the tilde bug hide as CGNAT for three sessions. When post-'ready' errors reach `console.error`, `journalctl -u castcrate | grep -i EROFS` finds the real cause in seconds.
+
+## Epic Review Findings (2026-08-09)
+
+- 💳 **Deploy surfaced 6 production bugs; root cause is a class of assumption (paths writable, ffmpeg terminates cleanly, `remove()` is sync, settings writes atomic) that recurs across features** — add "post-deploy sanity check" section to runbook + startup log line `CastCrate starting on <host> with DOWNLOAD_PATH=<path>` so misconfig is visible immediately. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

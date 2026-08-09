@@ -1,6 +1,6 @@
 # media-mac-deploy — Tasks
 
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09
 **Progress:** **47/47 — DEPLOY COMPLETE ✅.** All seven phases done. Cast test passed on real Chromecast HD ("Master Llama" / Llama Lounge TV), reboot survival proven, retention timer scheduled with sandbox-verified prune service. Full commit chain landed in the same session: crash fix (`4cb84d9`), three source-bug fixes (`1d65f44`), player overlay layering (`4ca3c2b`), Chromecast inventory (`503f61c`), audio loudness chain (`e7f12a3` → `254bae8` → `6e4f73e`), SIGTERM shutdown fix (this commit). Follow-ups logged (non-blocking): subtitle hot-swap during active cast (`castcrate/subtitles/context.md`), direct-play audio-normalization pass (`castcrate/transcoding`), scp box-notes.patch for `git am`.
 
 Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick items as you complete them; update the "Last updated" date each session and ping me with what you did (and any surprises) so I can help debug.

@@ -36,3 +36,16 @@
 - **StrictMode double-mount.** `Player.tsx` cleans up via explicit `handleClose`, not effect cleanup. Don't refactor to a cleanup effect — torrents will die before play starts.
 - **YTS domain rotates often.** `YTS_BASE_URL` env is the escape hatch; no auto-failover. Phase 9 adds Knaben as the empty-result fallback.
 - **`/stream/:hash/transcoded` shares the router** but belongs to Phase 6.
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **Indexer fallback wiring duplicated per adapter, error shapes drift** — spans yts ↔ knaben ↔ torrentday ↔ stremio — extract a `FallbackChain` abstraction in `lib/indexers.ts` so error normalization happens once. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Stream URL absolute-vs-relative contract is implicit** — spans yts ↔ chromecast ↔ stremio ↔ transcoding — add `StartTorrentResult.streamUrlType?: "absolute" | "relative"` in `@castcrate/shared`. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Proxy dispatcher cache and provider LRUs coordinate by convention only** — spans proxy-routing ↔ yts ↔ knaben ↔ torrentday ↔ stremio — export `getCacheKeySuffix()` from `lib/proxy.ts` and have every adapter import it. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Error boundary between adapters and `startTorrent()` is asymmetric** — spans yts ↔ knaben ↔ torrentday ↔ stremio ↔ proxy — add `StartTorrentResult.error?` and 202 on pipeline breaks after route return. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **mkdirSync-at-module-load** — spans scaffold ↔ yts ↔ library-settings ↔ transcoding. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Torrent-lifecycle idempotency** — spans yts ↔ library-settings ↔ transcoding ↔ player-buffer-ux — add double-delete test. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Buffer overlay has no formal state machine** — spans player-buffer-ux ↔ yts ↔ transcoding — extract `useBufferState()` reducer before more state lands. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **`{ sequentialDownload: true }` not passed explicitly; no concurrency cap** — relies on WebTorrent default; a user can OOM the 8GB box. Pass flag; add `MAX_CONCURRENT_TORRENTS` (default 3). (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

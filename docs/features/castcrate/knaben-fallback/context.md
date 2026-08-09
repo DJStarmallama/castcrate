@@ -35,3 +35,13 @@
 - **Magnet reconstruction uses hardcoded trackers.** If they all die, peer count is zero.
 - **No rate limiting.** Bulk searches could trip 429.
 - **Episode tag + regex both miss → silent skip.** No fuzzy-match fallback.
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **Fallback wiring duplication** — spans yts ↔ knaben ↔ torrentday ↔ stremio — extract `FallbackChain`. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Proxy cache suffix by convention only** — spans proxy ↔ yts ↔ knaben ↔ torrentday ↔ stremio — import shared `getCacheKeySuffix()`. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Adapter error boundary asymmetric** — spans yts ↔ knaben ↔ torrentday ↔ stremio ↔ proxy — add `StartTorrentResult.error?` + 202. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **DNS bypass is a global monkey-patch** — spans knaben ↔ proxy ↔ (all indexers) — `lib/dns.ts` patches process-wide, no per-indexer scoping. Document in README; defer scoping. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **Rate-limit handling absent; episode-match regex fragile; env vars undocumented** — no `Retry-After` backoff; `episodeMatchesTitle()` has 5 hand-rolled patterns; `KNABEN_BASE_URL`/`DNS_BYPASS`/`DNS_UPSTREAMS` absent from `.env.example`. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

@@ -35,3 +35,10 @@
 - **Episode overviews are empty.** OMDb season response doesn't include them.
 - **Hardcoded "YTS" copy in `TorrentPicker`** doesn't reflect Phase 9 knaben fallback.
 - **Adapter is the same one used by Phase 5.** Don't refactor the cache keys without checking series detail / season-episode behaviour.
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **`type` filter is load-bearing in the OMDb cache key but undocumented** — spans omdb-search ↔ cast-controls ↔ discovery — `services/omdb.ts:54` keys on `JSON.stringify(params)` including `type`; extract typed `cacheKey(q, type?)` helper. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **Zero automated test coverage, error mapping is stringly-typed** — no fixtures for 401/502/silent-empty; 3-char search floor is a magic constant. Add recorded fixtures + tests; expose OMDb quota in `/api/system/check`. `/review-feature castcrate/omdb-search`. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

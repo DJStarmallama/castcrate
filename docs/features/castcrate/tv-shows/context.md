@@ -36,3 +36,9 @@
 - **Knaben fallback requires title query param.** Without it, fallback is skipped silently.
 - **Specials (season 0) edge case.** Not specifically handled.
 - **Same OMDb LRU cache as Phase 1.** Don't refactor cache keys without re-checking series detail behaviour.
+
+## Epic Review Findings (2026-08-09)
+
+- 💳 **Season 0 and lazy-loaded season data need UX polish** — Season 0 shows as "Season 0" instead of "Specials"; no skeleton while `GET /api/series/:imdb/seasons/:n` runs. Small fixes; land as tv-shows follow-up. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

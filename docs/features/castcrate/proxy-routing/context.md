@@ -64,3 +64,14 @@ Out:
 - **Settings hot-reload.** `getSettings()` is sync. Building a fresh dispatcher per request is fine (cheap); cache one keyed by URL+enabled-flag if profiling shows otherwise.
 - **`socks-proxy-agent` is not a `Dispatcher`.** It's a Node `http.Agent`. To pipe through `fetch` (undici) we need either `undici.Agent({ connect })` with a custom connector, or fall back to `node-fetch` for SOCKS-routed providers. Pick one approach in implementation; don't mix. → **Chose undici connector approach.**
 - **Cache poisoning.** Existing LRU caches in providers key on query only. If user toggles proxy on/off, cached results from the wrong route may persist. Bump cache key with a `proxy:on|off` segment, or flush on settings change. → **Implemented `::proxy:on|off` suffix in all three providers.**
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **Proxy dispatcher cache and provider LRUs coordinate by convention only** — spans proxy ↔ yts ↔ knaben ↔ torrentday ↔ stremio — export `getCacheKeySuffix()`. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Adapter error boundary asymmetric** — spans yts ↔ knaben ↔ torrentday ↔ stremio ↔ proxy — 202 when pipeline breaks after route return. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Sensitive settings write with default umask before `6e4f73e`** — spans proxy ↔ stremio ↔ torrentday. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **DNS bypass global monkey-patch** — spans knaben ↔ proxy ↔ (all indexers). (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Addon URL normalization heuristic** — spans stremio ↔ discovery ↔ proxy. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **Dispatcher cache invalidation on settings toggle is convention-only** — `onSettingsUpdate()` works but coupling isn't declared; document invalidation contract; add `/api/proxy/debug` returning redacted dispatcher state. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._

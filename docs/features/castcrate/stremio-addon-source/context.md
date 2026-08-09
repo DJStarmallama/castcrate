@@ -101,3 +101,16 @@ Out:
 - **Magnet field shape.** Stremio returns `infoHash` separately from a trackers list (`announce: string[]`). Reconstruct a magnet URI client-side: `magnet:?xt=urn:btih:<infoHash>&dn=<title>&tr=<announce1>&tr=<announce2>…`. Reuse the existing `buildMagnet()` helper from `knaben.ts` (or extract to `lib/quality.ts`).
 - **`fileIdx` in Stremio results.** Some addons return a multi-file torrent + an index pointing to the specific episode file. We currently auto-pick the largest video file in `services/torrent.ts`; need to honour `fileIdx` when present so the right episode plays.
 - **Tracker risk.** Stremio addons can be hostile (malicious URLs, tracking pixels). Add a Settings warning that addon URLs are *bearer URLs* — they can contain user-config secrets (Real-Debrid API keys) — and to treat them like passwords.
+
+## Epic Review Findings (2026-08-09)
+
+- 🔗 **Fallback wiring duplication** — spans yts ↔ knaben ↔ torrentday ↔ stremio — extract `FallbackChain`. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Stremio HTTP-stream sessions bypass history** — spans stremio ↔ library-settings ↔ transcoding — TODO in `cast.ts` is load-bearing; decide synthetic-id or explicit UI surfacing. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Stream URL absolute-vs-relative implicit** — spans yts ↔ chromecast ↔ stremio ↔ transcoding — add `streamUrlType?` discriminator. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Proxy cache suffix by convention** — spans proxy ↔ yts ↔ knaben ↔ torrentday ↔ stremio. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Adapter error boundary asymmetric** — spans yts ↔ knaben ↔ torrentday ↔ stremio ↔ proxy. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Sensitive settings write with default umask before `6e4f73e`** — spans proxy ↔ stremio ↔ torrentday — Real-Debrid keys stored plaintext; audit existing 0o644. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 🔗 **Addon URL normalization is heuristic** — spans stremio ↔ discovery ↔ proxy — brittle strip-and-rebuild; reject unrecognized shapes at `validateAddon`. (See epic-overview.md → Tech Debt / Findings for full detail.)
+- 💳 **Addon URLs are bearer tokens plaintext (0o600 only); manifest validation loose** — validation checks `manifest.name` but not `resources: ["stream"]`. Tighten validation; document trust model; per-addon privacy warning. (See epic-overview.md → Tech Debt / Findings.)
+
+_Recorded by /review-epic castcrate on 2026-08-09._
