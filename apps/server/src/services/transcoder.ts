@@ -96,16 +96,42 @@ export function spawnTranscode(source: Readable): TranscodeHandle {
   return { process, stdout: process.stdout };
 }
 
-/** Kill every live transcode subprocess. Wired to the Fastify onClose hook. */
-export async function shutdownTranscodes(timeoutMs = 1500): Promise<void> {
+/**
+ * Kill every live transcode subprocess. Wired to the Fastify onClose hook.
+ *
+ * Two-phase: SIGTERM to every process first (giving ffmpeg a chance to flush),
+ * then wait for each process's `exit` event with a per-process ceiling; any
+ * process that hasn't exited by the deadline gets SIGKILL. Returns once every
+ * process is confirmed exited (or killed), so the shutdown path can block on
+ * it without racing.
+ */
+export async function shutdownTranscodes(perProcessTimeoutMs = 2000): Promise<void> {
   if (activeProcesses.size === 0) return;
-  for (const p of activeProcesses) {
-    if (!p.killed) p.kill("SIGTERM");
-  }
-  await new Promise((resolve) => setTimeout(resolve, timeoutMs));
-  for (const p of activeProcesses) {
-    if (!p.killed) p.kill("SIGKILL");
-  }
+  const procs = Array.from(activeProcesses);
+  const exits = procs.map(
+    (p) =>
+      new Promise<void>((resolve) => {
+        if (p.exitCode !== null || p.signalCode !== null) {
+          resolve();
+          return;
+        }
+        const done = () => resolve();
+        p.once("exit", done);
+        p.once("close", done);
+        if (!p.killed) p.kill("SIGTERM");
+        setTimeout(() => {
+          if (p.exitCode === null && p.signalCode === null) {
+            try {
+              p.kill("SIGKILL");
+            } catch {
+              /* already gone */
+            }
+          }
+          resolve();
+        }, perProcessTimeoutMs).unref();
+      }),
+  );
+  await Promise.all(exits);
   activeProcesses.clear();
 }
 

@@ -35,11 +35,7 @@ import {
 import { appendHistory, updateHistoryById } from "../services/history.js";
 import { parseRange } from "../lib/range.js";
 import { spawnTranscode, checkFfmpeg } from "../services/transcoder.js";
-
-// Cap on how long we'll wait for the first byte from WebTorrent before
-// returning 504. Bytes already in flight aren't subject to this — once
-// the stream starts, network stalls are the client's problem.
-const FIRST_BYTE_TIMEOUT_MS = 30_000;
+import { config } from "../lib/config.js";
 
 function waitForFirstByte(
   stream: NodeJS.ReadableStream,
@@ -494,7 +490,7 @@ export async function torrentRoutes(app: FastifyInstance) {
       // when WebTorrent has no peers and the bytes never arrive — instead
       // of letting the client hang on an open connection forever.
       try {
-        await waitForFirstByte(stream, FIRST_BYTE_TIMEOUT_MS);
+        await waitForFirstByte(stream, config.streamFirstByteTimeoutMs);
       } catch {
         try {
           stream.destroy();
@@ -581,6 +577,20 @@ export async function torrentRoutes(app: FastifyInstance) {
         }
       };
       req.raw.on("close", cleanup);
+
+      // First-byte timeout: if ffmpeg never produces output (typically because
+      // WebTorrent never delivered the source bytes), return 504 rather than
+      // hanging the client. Once ffmpeg starts producing data the timeout
+      // stops applying — mid-stream stalls are the client's problem.
+      try {
+        await waitForFirstByte(handle.stdout, config.streamFirstByteTimeoutMs);
+      } catch {
+        cleanup();
+        return reply.code(504).send({
+          error:
+            "transcoded stream stalled — ffmpeg produced no output within timeout. The torrent may have no peers, or ffmpeg failed to start.",
+        });
+      }
 
       reply.header("Content-Type", "video/mp4");
       // Transcoded streams are not seekable in v1; range requests are ignored.
