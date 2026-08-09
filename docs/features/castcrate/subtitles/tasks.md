@@ -24,7 +24,7 @@
 
 ### Medium priority
 - [ ] Per-torrent cache of discovered tracks
-- [ ] Multi-track switching at runtime via `Media.editTracksInfo`
+- [x] Multi-track switching at runtime via `Media.editTracksInfo` — done 2026-08-09 (see `context.md` "Session notes"). Torrent sessions only; HTTP-stream (Stremio) sessions still require stop+replay.
 - [ ] OpenSubtitles fallback when no subs are bundled
 - [ ] Tighten CORS to known origins once a stable web origin exists
 

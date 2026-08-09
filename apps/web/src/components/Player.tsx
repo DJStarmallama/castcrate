@@ -233,12 +233,15 @@ export function Player({ movie, session, onClose }: Props) {
             ))}
           </select>
         )}
-        {/* SubtitlePicker only applies to torrent sessions with a known infoHash. */}
+        {/* SubtitlePicker only applies to torrent sessions with a known infoHash.
+            castSessionId is forwarded so the picker can hot-swap the receiver
+            track via EDIT_TRACKS_INFO while a cast is active. */}
         {session.infoHash && (
           <SubtitlePicker
             infoHash={session.infoHash}
             selected={subtitle}
             onSelect={setSubtitle}
+            castSessionId={castSessionId}
           />
         )}
         <CastBar
