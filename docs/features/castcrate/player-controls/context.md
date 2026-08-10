@@ -159,3 +159,14 @@ has `contentEditable`. Same shape as the pre-existing `F` shortcut.
 (bottom-right). Removed from the header. Header now has: movie title / file
 picker / transcode badge / Stop & close. Simpler, more consistent, and
 mirrors Netflix's own bottom-bar layout.
+
+### 2026-08-10 — Deployed to the box
+
+- Landed via `e5b8169` merge; deployed to `castcrate.local`. Browser bundle bumped from ~385 kB → 398 kB gzipped, no runtime issues in journal.
+- **Not yet manually verified interactively** — the reported invisible native controls were the reason we rewrote rather than diagnosed further. Next session should cast-test:
+  - Bar appears on hover, hides after 3s while playing, stays while paused/buffering
+  - Space / ← → (±10s) / M / F / C / ↑ ↓ / Esc all fire correctly
+  - Double-click video toggles fullscreen
+  - Seek scrub tooltip renders on hover
+  - Subtitle picker (now inside the bar) surfaces both torrent-embedded AND OpenSubtitles tracks
+  - Casting: picking an OS track hot-swaps on the TV via EDIT_TRACKS_INFO

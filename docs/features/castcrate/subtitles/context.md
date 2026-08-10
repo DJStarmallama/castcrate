@@ -117,3 +117,11 @@ Verified: `pnpm --filter @castcrate/server build`, `pnpm --filter @castcrate/web
 - 💳 **No encoding detection; language heuristic; WebTorrent priority not bumped** — non-UTF-8 renders as garbage; picker shows "No subtitles" for minutes. Add `chardet`+`iconv`; `file.select(1)` to bump priority. (See epic-overview.md → Tech Debt / Findings.)
 
 _Recorded by /review-epic castcrate on 2026-08-09._
+
+### 2026-08-10 — OpenSubtitles live-verified on the box
+
+- Deployed to `castcrate.local` (Ubuntu 26.04 media Mac), added `OPENSUBTITLES_API_KEY` + `OPENSUBTITLES_LANGUAGES=en` to `~/castcrate/apps/server/.env`, restarted service (PID 12330 → 15648, `active`).
+- `curl http://localhost:3000/stream/2725fb.../subtitles?imdbId=tt0112442` returned ~20 English tracks including an exact-release match `BdBys (1995) BRRip 550mb` (the actual YTS torrent's release string). Top hits ordered by download count: 135k, 125k, 38k. Confirms the adapter, cache, and sort are all wired end-to-end.
+- **Loose end (security):** the user pasted the raw API key into chat during troubleshooting. Key logged in shell history + this transcript. Must be rotated at https://www.opensubtitles.com/en/consumers before any real long-term use.
+- **Loose end (verification):** live-device Chromecast test of OS-track selection + hot-swap via `EDIT_TRACKS_INFO` is still pending — API returns tracks correctly, but no in-cast track-switch was manually exercised yet. Next session should cast a movie, pick an OS track, verify no pause/blip on the TV.
+- **UX gotcha:** heredoc-based env-append kept failing due to terminal wrapping mangling the `EOF` marker. Two independent `echo >> .env` commands worked reliably. Note for future runbook additions: prefer one-liner appends over heredoc when guiding a user through remote shell edits.
