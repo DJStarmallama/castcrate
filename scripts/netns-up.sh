@@ -68,6 +68,29 @@ if [ -z "${LAN_IF:-}" ]; then
 fi
 log "detected LAN interface: $LAN_IF"
 
+# --- Step 0: per-ns DNS resolver --------------------------------------------
+# Linux auto-bind-mounts /etc/netns/<ns>/resolv.conf over /etc/resolv.conf for
+# any process entering <ns> via `ip netns exec`. Without this, processes in
+# the ns inherit whatever /etc/resolv.conf was on the host at ns-entry time —
+# often systemd-resolved's 127.0.0.53 stub, which is NOT reachable inside the
+# ns (there's no systemd-resolved in there).
+#
+# We point at Cloudflare (1.1.1.1 + 1.0.0.1). DNS queries exit through the WG
+# tunnel to the VPN peer, so the queries + responses are encrypted end-to-end
+# between us and the VPN provider (and not seen by our ISP). Users who prefer
+# their VPN provider's own DNS resolver can override this file post-install.
+mkdir -p "/etc/netns/${NS}"
+RESOLV_CONF="/etc/netns/${NS}/resolv.conf"
+DESIRED_RESOLV="nameserver 1.1.1.1
+nameserver 1.0.0.1
+"
+if [ ! -f "$RESOLV_CONF" ] || [ "$(cat "$RESOLV_CONF")" != "$DESIRED_RESOLV" ]; then
+  log "writing per-ns resolver config to $RESOLV_CONF"
+  printf '%s' "$DESIRED_RESOLV" > "$RESOLV_CONF"
+else
+  log "per-ns resolver config already correct at $RESOLV_CONF"
+fi
+
 # --- Step 1: namespace ------------------------------------------------------
 if $IP netns list | awk '{print $1}' | grep -qx "$NS"; then
   log "namespace $NS already exists — skipping create"
