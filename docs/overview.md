@@ -1,7 +1,7 @@
 # CastCrate - Master Overview
 
 **Last Updated:** 2026-08-12
-**Version:** v1.5
+**Version:** v1.6
 
 ## Project Summary
 
@@ -24,6 +24,7 @@ All product features currently live inside the **castcrate** umbrella epic (`doc
 
 ## Changelog
 
+- v1.6 (2026-08-12): **`tv-mode` planned as feature #23.** 10-foot UI skin for the existing web app — `?tv=1` toggles poster-grid + Netflix-style rails + focus-nav for the Chromecast remote's arrow keys / OK / Back. Runs on Google TV's built-in Chrome (Master Llama already has it) — no native app, no Cast Receiver App ID, no store distribution. Landing view = Library so pre-downloaded content is one remote click from playback. Pairs with `watch-later` for the full "browse the Library from the couch" UX. Zero backend changes; ~2-3 days of frontend work.
 - v1.5 (2026-08-12): **vpn-split-tunnel v1 shipped to the 2011 MBP box + two follow-up features planned.** v1 live on box: WG tunnel handshaking to IPVanish Amsterdam, `/api/system/vpn-health` green from LAN, TorrentDay search works without any system-VPN toggle. Deploy surfaced a few gotchas patched in-flight (AppArmor wg-quick profile → bypass with in-script `strip`; missing `ip_forward` for cross-interface DNAT → `sysctl -w` baked into `netns-up.sh`; ufw FORWARD chain DROP → two ACCEPT rules added; per-ns `/etc/resolv.conf` needed for DNS; ifconfig.co blocks VPN exits → switched health probe to Cloudflare's `1.1.1.1/cdn-cgi/trace`). **Known trade-off**: full-tunnel routing tanks torrent peer throughput → **`vpn-torrentday-only` v2 planned** (row #21): server on host clearnet, only TorrentDay adapter fetches via subprocess-in-ns. **`watch-later` library feature planned** (row #22): queue downloads, browse completed items in a Library view, cast from local disk with zero buffering — pairs beautifully with v2 for a full Plex-quality torrent UX.
 - v1.4 (2026-08-11): **Added `vpn-split-tunnel` planned feature.** Netns + WireGuard sketch so indexer/torrent traffic always egresses via VPN while LAN-facing `:3000` (Chromecast, browsers) keeps working on the host interface. Motivated by TorrentDay's 0-results-without-VPN behaviour and the annoyance of remembering to flip a system VPN on/off. Requirements + implementation skeleton only; slots into `media-mac-deploy` as Phase 8 when picked up. Epic now 20 features.
 - v1.3 (2026-08-08): **Deploy runbook COMPLETE 🎯.** `media-mac-deploy` at 47/47 (100%) — casting Interstellar to a real Chromecast HD ("Master Llama"), retention timer scheduled, auto-start on boot proven. The runbook execution surfaced and fixed a run of production bugs on the way: crash resilience (`4cb84d9`), the systemd-sandbox trio — silent-swallow / tilde footgun / DELETE-history leak (`1d65f44`), player overlay layering (`4ca3c2b`), audio loudness chain — compressor + loudnorm + limiter (`254bae8`, `6e4f73e`), and SIGTERM bounded shutdown (`b48f0b5`). Along the way the previous "Starlink CGNAT peer-starvation" diagnosis was disproven — real root cause was a stray tilde putting `DOWNLOAD_PATH` outside the systemd unit's `ReadWritePaths=`. `player-buffer-ux` up to 8/26 (Phase 6 overlay layering shipped).

@@ -2,7 +2,7 @@
 
 **Epic:** castcrate
 **Status:** 🟡 In Progress
-**Last Updated:** 2026-08-12 (vpn-split-tunnel v1 deployed + `vpn-torrentday-only` v2 planned + `watch-later` library feature planned — 22 total)
+**Last Updated:** 2026-08-12 (vpn-split-tunnel v1 deployed + `vpn-torrentday-only` v2 planned + `watch-later` library feature planned + `tv-mode` 10-foot-UI planned — 23 total)
 
 > **This file is the epic marker.** Its presence in `docs/features/castcrate/` tells every Beast Mode command that this folder is an **epic**, not a plain feature. Castcrate is currently organised as a single umbrella epic containing every feature in the project — see Purpose for the rationale (and non-rationale) of that choice.
 
@@ -16,7 +16,7 @@ Castcrate is a self-hosted cast/stream box: metadata search → torrent discover
 
 ## Features
 
-The full set of features that make up castcrate. Grouped by theme for readability; the epic itself is flat (all 22 live directly under `docs/features/castcrate/`).
+The full set of features that make up castcrate. Grouped by theme for readability; the epic itself is flat (all 23 live directly under `docs/features/castcrate/`).
 
 | # | Feature | Status | Tasks | Description |
 |---|---------|--------|-------|-------------|
@@ -51,6 +51,8 @@ The full set of features that make up castcrate. Grouped by theme for readabilit
 | 21 | vpn-torrentday-only | 🔵 Planned | — | v2 of VPN routing: server runs on host clearnet (full peer throughput), only TorrentDay adapter fetches route through the WG tunnel via a per-fetch subprocess in the ns. Adds `VPN_MODE=torrentday-only` as a third mode; v1's `vpn` and `off` still work. Reuses v1's netns + WG infrastructure. |
 | — | **Library (planned)** | | | |
 | 22 | watch-later | 🔵 Planned | — | Queue + Library UX: add search results to a "Watch Later" queue, download in the background, browse completed downloads in a poster-grid Library view. Play/Cast from Library uses fully-local files — zero buffer, instant seek. Retention prune respects a per-item "pinned" flag. |
+| — | **UX (planned)** | | | |
+| 23 | tv-mode | 🔵 Planned | — | 10-foot UI skin for the existing web app: `?tv=1` toggles poster-grid + Netflix-style rails + focus-nav for arrow keys + OK + Back. Runs on Google TV's built-in Chrome (no native app, no Cast Receiver). Landing view = Library so browsing pre-downloaded content is one remote click away. Pairs with `watch-later`. |
 
 > Reference any feature with `castcrate/<feature-name>` (e.g. `/proceed castcrate/stremio-addon-source`, `/continue-feature castcrate/hardening`). Bare names still resolve via fuzzy fallback (e.g. `/continue-feature discovery` → `castcrate/discovery`). Task counts are pulled from each feature's `tasks.md` and refreshed by `/update-epic`.
 
