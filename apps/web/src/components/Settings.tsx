@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { VpnHealth } from "@castcrate/shared";
 import { api, type ProxyProvider, type ProxyTestResult, type SettingsPatch, type StremioAddon, type StremioAddonTestResult, type TorrentDayTestResult } from "../lib/api";
 import { redactProxyUrl } from "../lib/format";
+import { countryFlag } from "../lib/countryFlag";
 import { useEscape } from "../hooks/useEscape";
 import { useLocalState } from "../hooks/useLocalState";
 
@@ -641,6 +643,9 @@ export function Settings({ onClose }: Props) {
           </div>
         </div>
 
+        {/* Network / VPN section */}
+        <VpnSection />
+
         {/* Indexers section */}
         <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
           <p className="text-sm font-medium text-zinc-200">
@@ -999,6 +1004,141 @@ export function Settings({ onClose }: Props) {
         </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function relativeTime(ts: number | null): string {
+  if (ts === null) return "never";
+  const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  return `${d}d ago`;
+}
+
+function VpnBadge({ health }: { health: VpnHealth }) {
+  const { mode, leaking, reachable } = health;
+  let label = "OFF";
+  let cls = "border-zinc-700 bg-zinc-800/60 text-zinc-300";
+  let ariaState = "off";
+  if (leaking) {
+    label = "LEAKING";
+    cls = "border-red-700/50 bg-red-900/40 text-red-300";
+    ariaState = "leaking";
+  } else if (mode === "vpn" && reachable) {
+    label = "VPN";
+    cls = "border-emerald-700/50 bg-emerald-900/40 text-emerald-300";
+    ariaState = "healthy";
+  } else if (mode === "vpn" && !reachable) {
+    label = "UNREACHABLE";
+    cls = "border-amber-700/50 bg-amber-900/40 text-amber-300";
+    ariaState = "unreachable";
+  }
+  return (
+    <span
+      role="status"
+      aria-label={`VPN status: ${ariaState}`}
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function VpnSection() {
+  const vpn = useQuery({
+    queryKey: ["vpn-health"],
+    queryFn: () => api.vpnHealth(),
+  });
+  const [refreshing, setRefreshing] = useState(false);
+  const [tick, setTick] = useState(0);
+  const qc = useQueryClient();
+
+  // Bump every 10s so the "last checked" relative time re-renders.
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 10_000);
+    return () => window.clearInterval(id);
+  }, []);
+  void tick;
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const data = await api.vpnHealth(true);
+      qc.setQueryData(["vpn-health"], data);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const h = vpn.data;
+
+  return (
+    <div
+      id="vpn-settings"
+      className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 scroll-mt-8"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-zinc-200">Network / VPN</p>
+        {h && <VpnBadge health={h} />}
+      </div>
+
+      {vpn.isPending && (
+        <p className="mt-3 text-xs text-zinc-500">Loading…</p>
+      )}
+      {vpn.isError && (
+        <p className="mt-3 text-xs text-red-400">
+          Failed to load VPN health: {vpn.error.message}
+        </p>
+      )}
+
+      {h && (
+        <>
+          <dl className="mt-4 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-xs text-zinc-400">Exit IP</dt>
+              <dd className="text-xs text-zinc-200">
+                <code>{h.publicIp ?? "—"}</code>
+                <span className="mx-1 text-zinc-600">·</span>
+                <span>{countryFlag(h.country)}</span>{" "}
+                <span>{h.country ?? "—"}</span>
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-xs text-zinc-400">Last checked</dt>
+              <dd className="text-xs text-zinc-500">
+                {relativeTime(h.lastCheckedAt)}
+              </dd>
+            </div>
+          </dl>
+
+          <p className="mt-3 text-[11px] text-zinc-600">
+            Peer: <code className="text-zinc-500">{h.wgPeer ?? "—"}</code>
+          </p>
+
+          {h.mode === "off" && (
+            <p className="mt-3 text-xs text-zinc-500">
+              VPN routing disabled. Set <code>VPN_MODE=vpn</code> and provide{" "}
+              <code>/etc/castcrate/wg0.conf</code> to enable.
+            </p>
+          )}
+
+          <div className="mt-4 flex items-center justify-end">
+            <button
+              onClick={() => void onRefresh()}
+              disabled={refreshing}
+              aria-label="Refresh VPN health"
+              className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

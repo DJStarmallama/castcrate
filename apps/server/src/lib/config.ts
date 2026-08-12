@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import type { VpnMode } from "@castcrate/shared";
 
 function expandTilde(p: string): string {
   if (p.startsWith("~/") || p === "~") {
@@ -24,6 +25,25 @@ export const config = {
   /** Optional SOCKS5/HTTP proxy URL loaded from env. Used as the default value
    *  for `proxyUrl` in runtime settings when no persisted value exists. */
   proxyUrl: process.env.PROXY_URL ?? null,
+  /** Override for `getLanIp()`. When set (non-empty), skips `os.networkInterfaces()`
+   *  auto-detect and returns this value directly. Needed for netns'd deploys
+   *  (vpn-split-tunnel) where inside the ns only `lo` + `veth-cc-ns` are visible
+   *  and auto-detect would return `10.200.200.2` — unreachable from LAN and
+   *  breaking Chromecast stream URL construction. Leave unset on macOS dev. */
+  castcrateLanIp: process.env.CASTCRATE_LAN_IP ?? null,
+  /** VPN routing mode. Only the literal value `"vpn"` opts in to VPN-aware
+   *  behaviour (`GET /api/system/vpn-health` probes ifconfig.co, settings
+   *  surfaces `vpnMode: "vpn"`). Any other value — including unset — collapses
+   *  to `"off"`, which short-circuits the probe and keeps macOS dev unchanged.
+   *  See `vpn-split-tunnel` feature Decision D3. */
+  vpnMode: (process.env.VPN_MODE === "vpn" ? "vpn" : "off") as VpnMode,
+  /** Host's clearnet public IP captured BEFORE enabling the netns. Used by
+   *  `/api/system/vpn-health` to detect leaks (`publicIp === hostClearnetIp`
+   *  → `leaking: true`). Env-only in v1 per Decision D5 — the runbook
+   *  instructs the user to `curl ifconfig.co/ip` and paste the result.
+   *  When null, leak detection is disabled (returns `leaking: false`) rather
+   *  than false-positive. */
+  hostClearnetIp: process.env.HOST_CLEARNET_IP ?? null,
   /** OpenSubtitles REST API v1 key. Free tier available at
    *  https://www.opensubtitles.com/en/consumers. When unset the OpenSubtitles
    *  fallback is disabled (subtitle discovery returns torrent-embedded only). */

@@ -8,6 +8,7 @@ import type {
   SeriesEpisode,
   SubtitleTrack,
   TorrentResult,
+  VpnHealth,
 } from "@castcrate/shared";
 
 class ApiError extends Error {
@@ -367,6 +368,11 @@ export const api = {
     request<StremioAddonTestResult>(
       `/api/stremio/test/${encodeURIComponent(id)}`,
     ),
+  vpnHealth: (refresh = false) => {
+    const url = new URL("/api/system/vpn-health", window.location.origin);
+    if (refresh) url.searchParams.set("refresh", "1");
+    return request<VpnHealth>(url.pathname + url.search);
+  },
 };
 
 // Re-export the shared discriminated union so component code has a stable

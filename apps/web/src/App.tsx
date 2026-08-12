@@ -19,6 +19,7 @@ import { Settings } from "./components/Settings";
 import { Theatre } from "./components/Theatre";
 import { Discover } from "./components/Discover";
 import { StreamWarning } from "./components/StreamWarning";
+import { VpnStatusPill } from "./components/VpnStatusPill";
 import { useDebounced } from "./hooks/useDebounced";
 import { useGlobalShortcut } from "./hooks/useGlobalShortcut";
 import { useWsBridge } from "./hooks/useWsBridge";
@@ -205,6 +206,16 @@ export default function App() {
         >
           Settings
         </button>
+        <VpnStatusPill
+          onOpenSettings={() => {
+            setShowSettings(true);
+            // Scroll to the VPN section once the Settings modal has mounted.
+            window.setTimeout(() => {
+              const el = document.getElementById("vpn-settings");
+              el?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 50);
+          }}
+        />
       </nav>
 
       <header

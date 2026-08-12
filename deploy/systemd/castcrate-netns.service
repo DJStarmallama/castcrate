@@ -1,0 +1,48 @@
+# castcrate-netns.service — CastCrate network namespace lifecycle
+#
+# Canonical install location:
+#   /etc/systemd/system/castcrate-netns.service
+#
+# What it does:
+#   Runs scripts/netns-up.sh at start and scripts/netns-down.sh at stop.
+#   The scripts set up (and tear down) the castcrate-ns network namespace,
+#   the veth pair, WireGuard interface, exception routes, and host DNAT rule
+#   that together implement the VPN split-tunnel. See the vpn-split-tunnel
+#   feature docs for architecture.
+#
+# Deploy (from a repo checkout on the target box):
+#   sudo cp deploy/systemd/*.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now castcrate-netns.service
+#
+# Feature docs:
+#   docs/features/castcrate/vpn-split-tunnel/implementation.md
+#   docs/features/castcrate/vpn-split-tunnel/context.md
+
+[Unit]
+Description=CastCrate network namespace (VPN split-tunnel)
+After=network-online.target
+Wants=network-online.target
+# When /etc/castcrate/wg0.conf is absent, this unit becomes a no-op (unit state
+# stays "inactive", not "failed"). This is how VPN_MODE=off / unconfigured
+# hosts degrade cleanly — see vpn-split-tunnel Decision #7.
+# Use ConditionPathExists= (skip) NOT RequiresPathExists= (fail).
+ConditionPathExists=/etc/castcrate/wg0.conf
+
+[Service]
+Type=oneshot
+# Keep the unit "active" between start and stop so dependent units see a
+# stable state (netns-up ran successfully; the ns is present).
+RemainAfterExit=yes
+ExecStart=/opt/castcrate/scripts/netns-up.sh
+ExecStop=/opt/castcrate/scripts/netns-down.sh
+# NO sandbox flags on this unit — netns-up.sh needs CAP_NET_ADMIN, iptables,
+# and `ip netns`. It runs as root by necessity. Do NOT add ProtectSystem=,
+# ProtectHome=, NoNewPrivileges=, etc. — they will break `ip netns exec` and
+# iptables in ways that fail silently (see media-mac-deploy "Bug A/B/C" cluster:
+# sandboxed write failures show up as network problems).
+# Restart= is intentionally omitted — this is a Type=oneshot; if setup fails,
+# systemd reports "failed" and dependent castcrate.service will not start.
+
+[Install]
+WantedBy=multi-user.target

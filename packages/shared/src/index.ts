@@ -178,3 +178,35 @@ export interface OpenSubtitlesSubtitleTrack {
    *  for sorting in the picker. */
   downloadCount?: number;
 }
+
+/** VPN routing mode surfaced by the server. `"off"` = default (macOS dev or
+ *  `VPN_MODE=off`); `"vpn"` = Fastify is running inside `castcrate-ns` with
+ *  outbound egress routed through WireGuard; `"unknown"` = reserved for
+ *  in-flight first-probe states (not currently emitted by v1). */
+export type VpnMode = "vpn" | "off" | "unknown";
+
+/** Health snapshot returned by `GET /api/system/vpn-health`. Cached server-side
+ *  for 30s; `?refresh=1` bypasses. See `vpn-split-tunnel` feature for shape
+ *  rationale (Decision D2). */
+export interface VpnHealth {
+  mode: VpnMode;
+  /** Public IP observed from inside the ns via ifconfig.co. null when the
+   *  probe is skipped (`mode==="off"`), still pending, or has failed. */
+  publicIp: string | null;
+  /** ISO 3166-1 alpha-2 country code from the lookup, uppercase. null when
+   *  the probe is skipped or the lookup did not return one. */
+  country: string | null;
+  /** WG peer endpoint `host:port` from `wg show wg-castcrate endpoints`.
+   *  null when `wg` is not present (macOS dev), the peer has no active
+   *  endpoint, or the probe was skipped. */
+  wgPeer: string | null;
+  /** True when the last outbound probe returned a 2xx within the timeout. */
+  reachable: boolean;
+  /** True when `publicIp === HOST_CLEARNET_IP` — i.e. the tunnel is up but
+   *  not rewriting egress (leak). Always false when `mode==="off"` and when
+   *  `HOST_CLEARNET_IP` is unset (no baseline to compare against). */
+  leaking: boolean;
+  /** Unix ms of the last successful probe. null if never succeeded (or
+   *  `mode==="off"` — the off short-circuit does not touch the timestamp). */
+  lastCheckedAt: number | null;
+}

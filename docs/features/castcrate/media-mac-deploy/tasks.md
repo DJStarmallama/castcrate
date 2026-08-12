@@ -38,7 +38,7 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 
 - [x] **3.1** From your laptop: `ssh castcrate@<ip>` (or `castcrate@castcrate.local` once avahi is running); accept the host key.
 - [x] **3.2** `sudo apt update && sudo apt full-upgrade -y`.
-- [x] **3.3** `sudo apt install -y build-essential git curl ca-certificates ffmpeg avahi-daemon avahi-utils ufw mbpfan`.
+- [x] **3.3** `sudo apt install -y build-essential git curl ca-certificates ffmpeg avahi-daemon avahi-utils ufw mbpfan wireguard-tools iptables`.
 - [x] **3.4** Configure `ufw`: default deny in / allow out; allow SSH + :3000 from LAN CIDR only (adjust CIDR to your LAN); allow 5353/udp for mDNS; `sudo ufw --force enable`.
 - [x] **3.5** Ignore lid switch in `/etc/systemd/logind.conf` (`HandleLidSwitch=ignore`, `HandleLidSwitchExternalPower=ignore`); `sudo systemctl restart systemd-logind`.
 - [x] **3.6** `sudo systemctl enable --now mbpfan avahi-daemon`.
@@ -97,6 +97,32 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 - [x] **7.5** Dry-run today: `sudo -u castcrate find ~/castcrate-downloads -type f -mtime +14 -print` — should print nothing yet (fresh install). ✅ No files >14d; oldest mtime on box is same-day. Also proved with a live smoke test (`sudo systemctl start castcrate-prune.service` ran twice, both `ExecMainStatus=0/SUCCESS`; first run correctly removed a pre-existing empty `Subs/` dir, second run was a no-op).
 
 **Acceptance:** timer scheduled; service unit passes a manual `sudo systemctl start castcrate-prune.service` without error. ✅ (2026-08-08)
+
+---
+
+## Phase 8 — VPN split-tunnel (~30 min)
+
+Runs the CastCrate server inside a Linux network namespace whose default route is WireGuard, so all indexer + torrent traffic egresses through the VPN while the host stays on clearnet for SSH + LAN + Chromecast. Assumes Phase 3's apt line has been re-run so `wireguard-tools` and `iptables` are installed (Ubuntu 24.04+ ships plain `iptables` with the nft backend as default — do **not** try to install a `iptables-nft` package, it does not exist).
+
+**Absolute paths only in every command below.** `EnvironmentFile=` and other systemd directives do NOT expand `~` — this is the tilde-footgun from the original deploy (see `context.md` → "Root cause found" and Known-gotchas → "systemd `EnvironmentFile=` does NOT expand `~`"). The env file lives at `/home/castcrate/castcrate/apps/server/.env`.
+
+- [ ] **8.1** `sudo mkdir -p /etc/castcrate && sudo chmod 700 /etc/castcrate` — WG config directory.
+- [ ] **8.2** Download `wg0.conf` from your VPN provider dashboard (Mullvad account page / PIA WG generator / Proton downloads / AirVPN config generator / **IPVanish's WireGuard Configuration Generator at `my.ipvanish.com/wireguard/`**). Copy it to the box, then `sudo mv <path>/wg0.conf /etc/castcrate/wg0.conf && sudo chmod 600 /etc/castcrate/wg0.conf && sudo chown root:root /etc/castcrate/wg0.conf`. **IPVanish-specific settings:** pick an EU P2P-friendly endpoint (Amsterdam / Netherlands / Switzerland / Romania — avoid US endpoints, some throttle P2P). Turn **OFF** "Exclude LAN Traffic" (our netns handles the LAN carve-out at the route layer; IPVanish's split-tunnel would fight our design). Turn **OFF** "Use Custom Public Key" (let the provider generate the keypair).
+- [ ] **8.3** Capture the box's clearnet IP **before enabling the ns**: `curl -s https://ifconfig.co/ip`. Append three lines to `/home/castcrate/castcrate/apps/server/.env`: `HOST_CLEARNET_IP=<value>`, `VPN_MODE=vpn`, and `CASTCRATE_LAN_IP=<box's LAN IP>` (usually `192.168.1.x` on the Deco setup; find it with `ip -4 addr show | grep 192.168`). The `CASTCRATE_LAN_IP` is required because inside the netns `os.networkInterfaces()` only sees `lo` + `veth-cc-ns`, which would otherwise break Chromecast stream URL construction.
+- [ ] **8.4** Copy the netns scripts from your dev machine to the box: `scp scripts/netns-up.sh scripts/netns-down.sh scripts/run-server.sh castcrate@<box>:/tmp/`. On the box: `sudo mkdir -p /opt/castcrate/scripts && sudo mv /tmp/netns-up.sh /tmp/netns-down.sh /tmp/run-server.sh /opt/castcrate/scripts/ && sudo chmod +x /opt/castcrate/scripts/*.sh`.
+- [ ] **8.5** Copy the systemd units: `scp deploy/systemd/castcrate-netns.service deploy/systemd/castcrate.service castcrate@<box>:/tmp/`. On the box: `sudo mv /tmp/castcrate-netns.service /tmp/castcrate.service /etc/systemd/system/`.
+- [ ] **8.6** `sudo systemctl daemon-reload && sudo systemctl enable --now castcrate-netns.service`. Verify `systemctl is-active castcrate-netns` returns `active`, and `ip netns list` shows `castcrate-ns`.
+- [ ] **8.7** `sudo systemctl restart castcrate.service`. Verify `systemctl is-active castcrate` returns `active`. Then `sudo journalctl -u castcrate -n 50 --no-pager` — no `denied` / `read-only` / `EROFS` errors (the tilde-footgun / sandboxed-write-path class of bugs from the original deploy; if any appear, re-check paths in `.env` and in the unit's `ReadWritePaths=` before proceeding).
+- [ ] **8.8** Verify egress split. Inside the ns: `sudo ip netns exec castcrate-ns curl -s https://ifconfig.co/json | jq .` returns the **VPN exit IP + country**. Outside the ns (plain host): `curl -s https://ifconfig.co/json | jq .` returns the **home clearnet IP** — should match the `HOST_CLEARNET_IP` set in 8.3.
+- [ ] **8.9** From a LAN client: `curl -s http://<box>:3000/api/system/vpn-health | jq .` returns `{ "mode": "vpn", "publicIp": "<VPN IP>", "country": "<XX>", "leaking": false, "reachable": true, "wgPeer": "<host:port>", "lastCheckedAt": <recent ms> }`.
+- [ ] **8.10** Load the CastCrate UI in a LAN browser: `http://<box>:3000`. The nav pill shows green `VPN · <XX>` on every screen. Settings → Network / VPN section shows the full VPN status block.
+- [ ] **8.11** **Cast regression:** search "Interstellar", cast to **Master Llama** (the exact title + device used to close the original `media-mac-deploy` in Phase 6.4), confirm playback starts on the TV within 30s.
+- [ ] **8.12** **TorrentDay regression** (the whole reason this feature exists): search a title known to have TD results. Confirm **non-empty** results without the user touching the box's system-level VPN.
+- [ ] **8.13** **Kill-switch spot-check.** Tear WG down inside the ns: `sudo ip netns exec castcrate-ns wg-quick down wg-castcrate` (this may error since our script uses manual `wg setconf` rather than `wg-quick up`; the tear-down still removes the interface which is all we need). Trigger an indexer search from the UI. Confirm: (a) the search fails/hangs within 30s, (b) the nav pill flips to `?` UNREACHABLE within 60s, (c) `curl -s http://<box>:3000/api/system/vpn-health | jq .` reports `reachable: false`. Bring the tunnel back up cleanly with `sudo systemctl restart castcrate-netns.service` (do **not** use `wg-quick up wg-castcrate` — our netns-up script uses manual `wg setconf`, and mixing the two creates confusion). Verify recovery within 60s: `vpn-health` returns `reachable: true` and a fresh search succeeds.
+- [ ] **8.14** **`VPN_MODE=off` fallback documented.** If you later remove `/etc/castcrate/wg0.conf` or set `VPN_MODE=off` in `/home/castcrate/castcrate/apps/server/.env`, `sudo systemctl restart castcrate` reverts to pre-feature behaviour (Fastify on host, no ns). The `castcrate-netns.service` becomes a no-op automatically via its `ConditionPathExists=/etc/castcrate/wg0.conf`. No unit needs to be disabled.
+- [ ] **8.15** Reboot the box (`sudo reboot`), wait 60s, then from a LAN client: `curl -s http://<box>:3000/api/system/vpn-health | jq .` returns green (`mode: "vpn"`, `leaking: false`, `reachable: true`). Proves auto-start on boot.
+
+**Acceptance:** `/api/system/vpn-health` returns `mode: "vpn"`, `leaking: false`, `reachable: true` from a LAN client; Interstellar → Master Llama casts end-to-end; TorrentDay search returns non-empty results without any system-level VPN toggle; kill-switch verified (WG down = search fails, no clearnet leak; WG back up = recovery); reboot survival proven.
 
 ---
 
