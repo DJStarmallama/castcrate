@@ -37,6 +37,7 @@ VETH_NS=veth-cc-ns
 HOST_ADDR=10.200.200.1/30
 NS_ADDR=10.200.200.2/30
 HOST_GW=10.200.200.1
+VETH_SUBNET=10.200.200.0/30
 WG_IF=wg-castcrate
 WG_CONF=/etc/castcrate/wg0.conf
 DNAT_PORT=3000
@@ -218,10 +219,23 @@ add_route_if_missing "192.168.0.0/16"  "via $HOST_GW dev $VETH_NS"
 add_route_if_missing "224.0.0.0/4"     "via $HOST_GW dev $VETH_NS"
 add_route_if_missing "default"         "dev $WG_IF"
 
-# --- Step 9: host DNAT rule -------------------------------------------------
+# --- Step 9: host IPv4 forwarding ------------------------------------------
+# Required because our DNAT below rewrites the destination to 10.200.200.2,
+# which is on a different interface (veth-cc-host) than the ingress LAN_IF.
+# The kernel treats cross-interface delivery as forwarding — needs ip_forward.
+# (Original design assumed conntrack alone would suffice — it does not for
+# DNAT that crosses interfaces. Verified on Ubuntu 26.04 on 2026-08-12.)
+#
+# Idempotent: sysctl -w is safe to call every boot. We do NOT save + restore
+# the previous value in netns-down — enabling ip_forward is a benign,
+# system-wide setting that other services often need too, and toggling it
+# back to 0 on teardown risks breaking whatever else came to depend on it.
+log "enabling net.ipv4.ip_forward=1 (required for DNAT across interfaces)"
+$SYSCTL -q -w net.ipv4.ip_forward=1
+
+# --- Step 10: host DNAT rule ------------------------------------------------
 # Republishes <LAN_IF>:3000 -> 10.200.200.2:3000 so LAN clients still reach
-# the server despite it running inside the ns. Uses conntrack for the reply
-# path — no ip_forward toggle needed.
+# the server despite it running inside the ns.
 if $IPTABLES -t nat -C PREROUTING -i "$LAN_IF" -p tcp --dport "$DNAT_PORT" \
     -j DNAT --to-destination "$DNAT_TARGET" 2>/dev/null; then
   log "DNAT rule already present on $LAN_IF:$DNAT_PORT — skipping"
@@ -231,6 +245,21 @@ else
     -j DNAT --to-destination "$DNAT_TARGET"
 fi
 
+# --- Step 11: FORWARD chain allow rules for the veth subnet -----------------
+# ufw defaults to DROP on the FORWARD chain. DNAT'd packets crossing from
+# LAN_IF to veth-cc-host would be dropped without explicit allows. Two rules:
+# one for inbound-to-ns, one for the return path.
+for dir in "-d" "-s"; do
+  if $IPTABLES -C FORWARD "$dir" "$VETH_SUBNET" -j ACCEPT 2>/dev/null; then
+    log "FORWARD $dir $VETH_SUBNET ACCEPT rule already present — skipping"
+  else
+    log "adding FORWARD $dir $VETH_SUBNET -j ACCEPT"
+    # -I at position 1 so we sit AHEAD of ufw's own FORWARD chains (which
+    # would otherwise DROP before we got a chance to ACCEPT).
+    $IPTABLES -I FORWARD 1 "$dir" "$VETH_SUBNET" -j ACCEPT
+  fi
+done
+
 log "castcrate-ns is up. verify with:"
-log "  $IP netns exec $NS curl -s https://ifconfig.co/json  # -> VPN exit IP"
-log "  curl -s https://ifconfig.co/json                     # -> host clearnet IP"
+log "  $IP netns exec $NS curl -s https://1.1.1.1/cdn-cgi/trace  # -> VPN exit IP + loc"
+log "  curl -s https://1.1.1.1/cdn-cgi/trace                     # -> host clearnet IP + loc"

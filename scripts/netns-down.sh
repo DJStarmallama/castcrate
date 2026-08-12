@@ -3,12 +3,17 @@
 # netns-down.sh — Teardown of the castcrate-ns network namespace.
 #
 # Reverses netns-up.sh in the safe order:
-#   1. Remove host iptables nat/PREROUTING DNAT rule(s) that target :3000
+#   1. Remove host iptables FORWARD ACCEPT rules for the veth subnet.
+#   2. Remove host iptables nat/PREROUTING DNAT rule(s) that target :3000
 #      inside the ns (scan iptables-save so we catch rules whose -i interface
 #      has changed since the up ran — e.g. LAN interface renamed).
-#   2. Delete the WireGuard interface inside the ns (also drops its routes).
-#   3. Delete the veth pair (deleting one end deletes both).
-#   4. Delete the namespace.
+#   3. Delete the WireGuard interface inside the ns (also drops its routes).
+#   4. Delete the veth pair (deleting one end deletes both).
+#   5. Delete the namespace.
+#
+# We deliberately do NOT reset net.ipv4.ip_forward on teardown — see
+# netns-up.sh Step 9 for the rationale (benign, system-wide, other services
+# often depend on it, safer to leave enabled).
 #
 # Every step is guarded ("if exists, remove; else silently continue") so a
 # second invocation is a no-op. Absolute paths only — no reliance on $PATH.
@@ -21,6 +26,7 @@ NS="castcrate-ns"
 VETH_HOST="veth-cc-host"
 WG_IF="wg-castcrate"
 NS_INNER_IP="10.200.200.2"
+VETH_SUBNET="10.200.200.0/30"
 DNAT_PORT="3000"
 
 IP=/usr/sbin/ip
@@ -28,7 +34,19 @@ IPTABLES=/usr/sbin/iptables
 
 log() { echo "[netns-down] $*"; }
 
-# ----- 1. Host DNAT teardown --------------------------------------------------
+# ----- 1. Host FORWARD ACCEPT rules -----------------------------------------
+# Remove both -d and -s FORWARD ACCEPT rules for the veth subnet. May remove
+# multiple copies if the script accidentally added the rule more than once
+# (defensive — the -C guard in netns-up.sh should prevent it, but reruns
+# under weird states are possible).
+for dir in "-d" "-s"; do
+  while $IPTABLES -C FORWARD "$dir" "$VETH_SUBNET" -j ACCEPT 2>/dev/null; do
+    log "removing FORWARD $dir $VETH_SUBNET -j ACCEPT"
+    $IPTABLES -D FORWARD "$dir" "$VETH_SUBNET" -j ACCEPT 2>/dev/null || break
+  done
+done
+
+# ----- 2. Host DNAT teardown -------------------------------------------------
 #
 # Scan iptables-save for any PREROUTING rule whose --to-destination targets our
 # ns-side IP and port, and delete each. This is more robust than trying to
