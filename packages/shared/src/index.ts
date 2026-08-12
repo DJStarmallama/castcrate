@@ -227,3 +227,80 @@ export interface VpnHealth {
    *  `mode==="off"` — the off short-circuit does not touch the timestamp). */
   lastCheckedAt: number | null;
 }
+
+// -----------------------------------------------------------------------------
+// watch-later feature — queue + library types
+// -----------------------------------------------------------------------------
+
+export type LibraryStatus = "queued" | "downloading" | "completed";
+
+/** One row of ~/.castcrate/library.json.
+ *  `hash` is null while a magnet is still being resolved (fetch-metadata phase);
+ *  `filePath` is null until the download completes; `completedAt` is null
+ *  until the same moment. `pinned` is orthogonal to state and controls
+ *  retention-prune eligibility only. */
+export interface LibraryItem {
+  /** Client-stable id. Generated server-side on add — `crypto.randomUUID()`.
+   *  Independent of `hash` so we can reference an item even before metadata
+   *  resolves. */
+  id: string;
+  /** Magnet URI. Present for magnet-added items; absent when the item came
+   *  from a .torrent blob (rare — TorrentDay). */
+  magnet: string | null;
+  /** WebTorrent infoHash (lowercase). Null until metadata resolves. Once
+   *  set, becomes the dedupe key. */
+  hash: string | null;
+  /** Snapshot of metadata at add-time, so display works even if OMDB/TMDB
+   *  is down when the user opens Library. */
+  title: string;
+  year: number | null;
+  poster: string | null;
+  imdbId: string | null;
+  /** Which torrent source produced this — mirrors TorrentResult.source. */
+  source: "yts" | "eztv" | "knaben" | "torrentday" | "stremio" | "unknown";
+  /** ISO 8601 add time. */
+  addedAt: string;
+  /** ISO 8601 completion time; null while queued/downloading. */
+  completedAt: string | null;
+  /** Path (relative to DOWNLOAD_PATH) to the picked video file inside the
+   *  torrent. Null until completion. Written by the download-queue worker. */
+  filePath: string | null;
+  /** Retention-prune exclusion flag. Inviolable — a pinned entry's file
+   *  MUST NOT be deleted by castcrate-prune.service. */
+  pinned: boolean;
+}
+
+/** Wire shape returned by `GET /api/library`. Sections are pre-sorted
+ *  add-date desc so the client renders straight from the payload. */
+export interface LibraryListResponse {
+  queued: LibraryItem[]; // completedAt === null && hash === null
+  downloading: LibraryItem[]; // completedAt === null && hash !== null
+  completed: LibraryItem[]; // completedAt !== null
+}
+
+/** POST /api/library/queue request. Metadata is captured at add-time
+ *  from whichever search source produced the row — the queue never
+ *  re-fetches. */
+export interface AddToQueueRequest {
+  magnet: string;
+  metadata: {
+    title: string;
+    year: number | null;
+    poster: string | null;
+    imdbId: string | null;
+    source: LibraryItem["source"];
+  };
+}
+
+export interface AddToQueueResponse {
+  id: string;
+  alreadyPresent: boolean;
+}
+
+/** POST /api/library/:id/play response — the client uses `streamUrl`
+ *  to redirect straight to the player. `hash` is exposed for cast + status
+ *  polling consistency with the existing torrent surface. */
+export interface LibraryPlayResponse {
+  streamUrl: string;
+  hash: string;
+}

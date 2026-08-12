@@ -96,7 +96,22 @@ Runbook feature. Tasks correspond 1:1 to the "sessions" in the walkthrough. Tick
 - [x] **7.4** `systemctl list-timers castcrate-prune.timer` shows the next 04:00 run. ✅ Next run 2026-08-09 04:13:22 UTC (04:00 + 13m22s randomized delay — confirms both OnCalendar and RandomizedDelaySec are live). Note: UTC, not local.
 - [x] **7.5** Dry-run today: `sudo -u castcrate find ~/castcrate-downloads -type f -mtime +14 -print` — should print nothing yet (fresh install). ✅ No files >14d; oldest mtime on box is same-day. Also proved with a live smoke test (`sudo systemctl start castcrate-prune.service` ran twice, both `ExecMainStatus=0/SUCCESS`; first run correctly removed a pre-existing empty `Subs/` dir, second run was a no-op).
 
-**Acceptance:** timer scheduled; service unit passes a manual `sudo systemctl start castcrate-prune.service` without error. ✅ (2026-08-08)
+### 7.6 — Update `castcrate-prune.service` to be pin-aware (watch-later feature, 2026-08-11 planning)
+
+The nightly prune must now respect `~/.castcrate/library.json`'s `pinned: true` entries — the Watch Later feature promises that pinned files survive retention. Ship the script `scripts/prune-downloads.sh` (in the repo) and re-point the unit's `ExecStart=` at it. Runbook steps:
+
+- [ ] **7.6.1** Install `jq` on the box (used by the new script to parse `library.json`): `sudo apt install -y jq`. Re-run of Phase 3.3's apt line would pick this up on clean installs; here it's an in-place add.
+- [ ] **7.6.2** Copy the new script: `scp scripts/prune-downloads.sh castcrate@<box>:/tmp/ && sudo mv /tmp/prune-downloads.sh /opt/castcrate/scripts/ && sudo chmod 755 /opt/castcrate/scripts/prune-downloads.sh && sudo chown root:root /opt/castcrate/scripts/prune-downloads.sh`.
+- [ ] **7.6.3** Edit `/etc/systemd/system/castcrate-prune.service`:
+  - Replace the inline `find … -mtime +14 -delete` `ExecStart=` line with `ExecStart=/opt/castcrate/scripts/prune-downloads.sh`.
+  - Add `EnvironmentFile=/home/castcrate/castcrate/apps/server/.env` so `DOWNLOAD_PATH`, `HISTORY_DIR`, and (optionally) `RETENTION_DAYS` are read from the same env file the app uses. Absolute path — do NOT use `~` (tilde-footgun — see Phase 3's `EnvironmentFile=` gotcha).
+  - Keep every existing sandbox directive verbatim: `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp=true`, `ReadWritePaths=/home/castcrate/castcrate-downloads`. `ProtectHome=read-only` still lets us READ `/home/castcrate/.castcrate/library.json` — no unit change needed there.
+  - Optionally add `ReadOnlyPaths=/home/castcrate/.castcrate` for defence-in-depth (the script only reads that dir; explicit ro-mount defends against future script bugs that might try to write it).
+- [ ] **7.6.4** `sudo systemctl daemon-reload && sudo systemctl start castcrate-prune.service`. Expected on a clean library: exit 0, `journalctl -u castcrate-prune -n 30 --no-pager` shows the summary line (`found=N skipped=K deleted=M`) with `deleted=0` if no files older than 14 days exist.
+- [ ] **7.6.5** Fail-safe verification (do this ONCE at deploy time): `sudo systemctl stop castcrate.service` (so the manifest isn't being written concurrently); make a corrupt copy: `sudo -u castcrate cp /home/castcrate/.castcrate/library.json{,.bak}; echo '{not json' | sudo tee /home/castcrate/.castcrate/library.json > /dev/null`; run `sudo systemctl start castcrate-prune.service`; verify the unit reports `failed` (exit 1) via `systemctl status castcrate-prune.service`; verify no files were deleted (`ls -la ~/castcrate-downloads`); restore: `sudo -u castcrate mv /home/castcrate/.castcrate/library.json{.bak,}`. This is the whole product promise — verify it once.
+- [ ] **7.6.6** Pin verification (do this ONCE with a real pinned file): pin any completed Watch Later item via the UI, then age its file with `sudo touch -d "20 days ago" <path>` and `sudo systemctl start castcrate-prune.service`; the file must survive. `journalctl -u castcrate-prune` shows `SKIP (pinned) <path>` for that file.
+
+**Acceptance:** timer scheduled; service unit passes a manual `sudo systemctl start castcrate-prune.service` without error. ✅ (2026-08-08). Pin-aware upgrade pending — see 7.6 above (watch-later feature Phase 5).
 
 ---
 

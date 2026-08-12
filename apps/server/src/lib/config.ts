@@ -64,4 +64,9 @@ export const config = {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
+  /** Max concurrent background downloads spawned by the Watch Later queue.
+   *  Kept low by default because the 2011 MBP deploy box has 8 GB RAM and
+   *  shares WebTorrent capacity with any active cast-now stream. Increase if
+   *  the box gains headroom. See watch-later feature — Key Decisions #3. */
+  maxConcurrentQueued: Number(process.env.MAX_CONCURRENT_QUEUED ?? 2),
 };

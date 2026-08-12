@@ -20,12 +20,17 @@ const { discoverRoutes } = await import("./routes/discover.js");
 const { proxyRoutes } = await import("./routes/proxy.js");
 const { torrentdayRoutes } = await import("./routes/torrentday.js");
 const { stremioRoutes } = await import("./routes/stremio.js");
+const { libraryRoutes } = await import("./routes/library.js");
 const { shutdown } = await import("./services/torrent.js");
 const { startDiscovery, stopDiscovery } = await import("./services/discovery.js");
 const { shutdownCast } = await import("./services/cast.js");
 const { shutdownTranscodes } = await import("./services/transcoder.js");
 const { initSettings } = await import("./services/settings.js");
 await initSettings();
+const {
+  startDownloadQueueProcessor,
+  stopDownloadQueueProcessor,
+} = await import("./services/download-queue.js");
 const fastifyWebsocket = (await import("@fastify/websocket")).default;
 const { wsRoutes } = await import("./routes/ws.js");
 const { startBroadcasters, stopBroadcasters } = await import(
@@ -48,8 +53,10 @@ await app.register(discoverRoutes);
 await app.register(proxyRoutes);
 await app.register(torrentdayRoutes);
 await app.register(stremioRoutes);
+await app.register(libraryRoutes);
 
 startBroadcasters();
+startDownloadQueueProcessor();
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webDist = join(here, "../../web/dist");
@@ -70,6 +77,7 @@ startDiscovery();
 app.addHook("onClose", async () => {
   stopBroadcasters();
   stopDiscovery();
+  await stopDownloadQueueProcessor();
   await shutdownCast();
   await shutdownTranscodes();
   await shutdown();

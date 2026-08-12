@@ -1,7 +1,11 @@
 import type {
+  AddToQueueRequest,
+  AddToQueueResponse,
   CastAction,
   CastDevice,
   CastSessionStatus,
+  LibraryListResponse,
+  LibraryPlayResponse,
   MovieDetails,
   MovieSearchResult,
   SeriesDetails,
@@ -373,6 +377,27 @@ export const api = {
     if (refresh) url.searchParams.set("refresh", "1");
     return request<VpnHealth>(url.pathname + url.search);
   },
+  libraryList: () => request<LibraryListResponse>("/api/library"),
+  libraryAdd: (req: AddToQueueRequest) =>
+    request<AddToQueueResponse>("/api/library/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    }),
+  libraryDelete: (id: string) =>
+    request<void>(`/api/library/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  librarySetPin: (id: string, pinned: boolean) =>
+    request<void>(`/api/library/${encodeURIComponent(id)}/pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned }),
+    }),
+  libraryPlay: (id: string) =>
+    request<LibraryPlayResponse>(`/api/library/${encodeURIComponent(id)}/play`, {
+      method: "POST",
+    }),
 };
 
 // Re-export the shared discriminated union so component code has a stable

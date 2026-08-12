@@ -1,7 +1,7 @@
 # watch-later — Implementation Plan
 
 **Epic:** castcrate
-**Status:** Planning
+**Status:** In Progress
 **Started:** 2026-08-12
 **Target Completion:** TBD
 **Last Updated:** 2026-08-12

@@ -15,6 +15,7 @@ import { TorrentPicker } from "./components/TorrentPicker";
 import { EpisodePicker } from "./components/EpisodePicker";
 import { Player } from "./components/Player";
 import { Library } from "./components/Library";
+import { WatchLaterLibrary } from "./components/WatchLaterLibrary";
 import { Settings } from "./components/Settings";
 import { Theatre } from "./components/Theatre";
 import { Discover } from "./components/Discover";
@@ -47,6 +48,7 @@ export default function App() {
   } | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [showWatchLater, setShowWatchLater] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showTdWarning, setShowTdWarning] = useState(false);
   const [typeFilter, setTypeFilter] = useState<"all" | "movie" | "series">("all");
@@ -195,6 +197,14 @@ export default function App() {
       <main className="relative z-10 mx-auto flex min-h-full max-w-7xl flex-col px-6 py-6">
       <nav className="flex items-center justify-end gap-2">
         <button
+          type="button"
+          onClick={() => setShowWatchLater(true)}
+          className="rounded-full px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+        >
+          Watch Later
+        </button>
+        <button
+          type="button"
           onClick={() => setShowLibrary(true)}
           className="rounded-full px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
         >
@@ -360,6 +370,17 @@ export default function App() {
       )}
 
       {showLibrary && <Library onClose={() => setShowLibrary(false)} />}
+      {showWatchLater && (
+        <WatchLaterLibrary
+          onClose={() => setShowWatchLater(false)}
+          onPlay={(sess, meta) => {
+            setSession(sess);
+            setSessionTitle({ title: meta.title, poster: meta.poster });
+            setStartError(null);
+            setShowWatchLater(false);
+          }}
+        />
+      )}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       {showTdWarning && (
         <StreamWarning
