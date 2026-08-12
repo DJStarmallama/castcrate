@@ -2,6 +2,12 @@
 #
 # netns-down.sh — Teardown of the castcrate-ns network namespace.
 #
+# MODE-AGNOSTIC: this script does not read VPN_MODE. Every teardown step is
+# guarded by an "if exists" check, so it cleans up whatever's currently
+# present regardless of which mode (`vpn` v1 or `torrentday-only` v2) built
+# the setup. Under `torrentday-only`, steps 1 (FORWARD) + 2 (DNAT) + 4 (veth)
+# find no matching state and are no-ops.
+#
 # Reverses netns-up.sh in the safe order:
 #   1. Remove host iptables FORWARD ACCEPT rules for the veth subnet.
 #   2. Remove host iptables nat/PREROUTING DNAT rule(s) that target :3000
@@ -18,7 +24,8 @@
 # Every step is guarded ("if exists, remove; else silently continue") so a
 # second invocation is a no-op. Absolute paths only — no reliance on $PATH.
 #
-# See docs/features/castcrate/vpn-split-tunnel/implementation.md Phase 1.
+# See docs/features/castcrate/vpn-split-tunnel/implementation.md Phase 1
+# and docs/features/castcrate/vpn-torrentday-only/implementation.md Phase 4.
 
 set -euo pipefail
 

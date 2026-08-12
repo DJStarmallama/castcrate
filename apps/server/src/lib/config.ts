@@ -31,12 +31,22 @@ export const config = {
    *  and auto-detect would return `10.200.200.2` — unreachable from LAN and
    *  breaking Chromecast stream URL construction. Leave unset on macOS dev. */
   castcrateLanIp: process.env.CASTCRATE_LAN_IP ?? null,
-  /** VPN routing mode. Only the literal value `"vpn"` opts in to VPN-aware
-   *  behaviour (`GET /api/system/vpn-health` probes ifconfig.co, settings
-   *  surfaces `vpnMode: "vpn"`). Any other value — including unset — collapses
-   *  to `"off"`, which short-circuits the probe and keeps macOS dev unchanged.
-   *  See `vpn-split-tunnel` feature Decision D3. */
-  vpnMode: (process.env.VPN_MODE === "vpn" ? "vpn" : "off") as VpnMode,
+  /** VPN routing mode. Accepts three literal values; anything else — including
+   *  unset — collapses to `"off"` (macOS dev / opt-out).
+   *
+   *  - `"vpn"` — full-tunnel (v1, `vpn-split-tunnel`): Fastify runs inside
+   *    `castcrate-ns`; all outbound egress via WG.
+   *  - `"torrentday-only"` — split (v2, `vpn-torrentday-only`): Fastify on host
+   *    for full peer throughput; only TorrentDay HTTP fetches are spawned into
+   *    the ns via `ip netns exec castcrate-ns node td-fetcher.js <url>`.
+   *  - `"off"` — no VPN routing; short-circuits `/api/system/vpn-health`.
+   *
+   *  The parser matches exact literals only — no aliases (no `"td-only"`,
+   *  no case-insensitive match). Value must appear verbatim in the env. */
+  vpnMode: ((): VpnMode => {
+    const raw = process.env.VPN_MODE ?? "off";
+    return raw === "vpn" || raw === "torrentday-only" ? raw : "off";
+  })(),
   /** Host's clearnet public IP captured BEFORE enabling the netns. Used by
    *  `/api/system/vpn-health` to detect leaks (`publicIp === hostClearnetIp`
    *  → `leaking: true`). Env-only in v1 per Decision D5 — the runbook

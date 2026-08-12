@@ -18,6 +18,24 @@ vi.mock("../../lib/proxy.js", () => ({
   getDispatcher: vi.fn(() => undefined),
 }));
 
+// Mock config so tests run in `off` mode (byte-identical direct-fetch path).
+// The torrentday-fetch helper reads config.vpnMode at call time; keeping it
+// pinned to "off" here means these tests exercise the same code the pre-v2
+// TD adapter used, plus the new helper's `off`-branch wiring.
+vi.mock("../../lib/config.js", () => ({
+  config: {
+    vpnMode: "off" as "vpn" | "torrentday-only" | "off" | "unknown",
+  },
+}));
+
+// Small helper — the torrentday-fetch helper now uses `arrayBuffer()` even for
+// HTML (Buffer end-to-end, then utf8 decode at the caller). Tests need mocks
+// that supply BOTH so both `.text()` (dropped) and `.arrayBuffer()` work.
+function bodyToArrayBuffer(text: string): ArrayBuffer {
+  const enc = new TextEncoder().encode(text);
+  return enc.buffer.slice(enc.byteOffset, enc.byteOffset + enc.byteLength) as ArrayBuffer;
+}
+
 // ---------------------------------------------------------------------------
 // Import after mocks are set up.
 // ---------------------------------------------------------------------------
@@ -93,6 +111,7 @@ describe("torrentday adapter", () => {
         status: 200,
         headers: { get: () => null },
         text: async () => searchHtml,
+        arrayBuffer: async () => bodyToArrayBuffer(searchHtml),
       }));
 
       const results = await searchTorrentDayMovie("inception", 2010);
@@ -106,6 +125,7 @@ describe("torrentday adapter", () => {
         status: 200,
         headers: { get: () => null },
         text: async () => searchHtml,
+        arrayBuffer: async () => bodyToArrayBuffer(searchHtml),
       }));
 
       const results = await searchTorrentDayMovie("inception", 2010);
@@ -123,6 +143,7 @@ describe("torrentday adapter", () => {
         status: 200,
         headers: { get: () => null },
         text: async () => searchHtml,
+        arrayBuffer: async () => bodyToArrayBuffer(searchHtml),
       }));
 
       const results = await searchTorrentDayMovie("inception", 2010);
@@ -140,6 +161,7 @@ describe("torrentday adapter", () => {
         status: 200,
         headers: { get: () => null },
         text: async () => searchHtml,
+        arrayBuffer: async () => bodyToArrayBuffer(searchHtml),
       }));
 
       const results = await searchTorrentDayMovie("inception", 2010);
@@ -157,6 +179,7 @@ describe("torrentday adapter", () => {
         status: 200,
         headers: { get: () => null },
         text: async () => searchHtml,
+        arrayBuffer: async () => bodyToArrayBuffer(searchHtml),
       }));
 
       const results = await searchTorrentDayMovie("inception", 2010);
@@ -181,6 +204,7 @@ describe("torrentday adapter", () => {
         status: 200,
         headers: { get: () => null },
         text: async () => loginHtml,
+        arrayBuffer: async () => bodyToArrayBuffer(loginHtml),
       }));
 
       await expect(searchTorrentDayMovie("inception", 2010)).rejects.toThrow(
@@ -194,6 +218,7 @@ describe("torrentday adapter", () => {
         status: 302,
         headers: { get: (h: string) => (h === "location" ? "/login.php" : null) },
         text: async () => "",
+        arrayBuffer: async () => bodyToArrayBuffer(""),
       }));
 
       await expect(searchTorrentDayMovie("inception", 2010)).rejects.toThrow(

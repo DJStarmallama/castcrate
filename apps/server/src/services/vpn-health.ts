@@ -17,6 +17,16 @@ const WG_BIN = "/usr/bin/wg";
 const WG_TIMEOUT_MS = 1_000;
 const CACHE_TTL_MS = 30_000;
 
+// Subprocess paths for the torrentday-only probe path. Absolute — match what
+// systemd invokes on the deploy box.
+const IP_BIN = "/usr/sbin/ip";
+const NODE_BIN = "/usr/bin/node";
+const NS_NAME = "castcrate-ns";
+const NS_FETCHER_PATH = "/opt/castcrate/scripts/ns-fetcher.js";
+/** Outer guard for the probe subprocess — a bit longer than the inner
+ *  NS_TIMEOUT_MS to catch the pathological case of the subprocess hanging. */
+const PROBE_OUTER_TIMEOUT_MS = 5_000;
+
 interface CacheEntry {
   value: VpnHealth;
   storedAt: number;
@@ -27,17 +37,24 @@ let cache: CacheEntry | null = null;
 /**
  * Return a `VpnHealth` snapshot. Cached for 30s; `forceRefresh` bypasses.
  *
- * When `config.vpnMode !== "vpn"`, short-circuits to a static `mode:"off"`
- * response WITHOUT issuing the ifconfig.co fetch or spawning `wg` — this is
- * the macOS-dev / opt-out path and must never touch the network.
+ * Behaviour by mode:
+ *  - `off` / `unknown`: short-circuit to a static `mode:"off"` response — no
+ *    network, no subprocess. macOS-dev / opt-out path.
+ *  - `vpn` (v1): direct `fetch()` of the probe URL. Fastify is already inside
+ *    `castcrate-ns`, so the fetch naturally exits via WG.
+ *  - `torrentday-only` (v2): Fastify is on the host, so we spawn
+ *    `ip netns exec castcrate-ns node /opt/castcrate/scripts/ns-fetcher.js
+ *    <probe-url>` and parse the trace body from stdout. `wg show` is also
+ *    wrapped with `ip netns exec castcrate-ns` since the WG interface lives
+ *    inside the ns.
  *
  * Failed probes do NOT overwrite a valid cache — the caller gets a fresh
  * failure result and the previous success remains cached until it expires
  * naturally.
  */
 export async function getVpnHealth(forceRefresh = false): Promise<VpnHealth> {
-  // Off short-circuit — no network, no subprocess. Verified via test mock.
-  if (config.vpnMode !== "vpn") {
+  // Off / unknown short-circuit — no network, no subprocess. Verified via test mock.
+  if (config.vpnMode === "off" || config.vpnMode === "unknown") {
     return {
       mode: "off",
       publicIp: null,
@@ -53,12 +70,18 @@ export async function getVpnHealth(forceRefresh = false): Promise<VpnHealth> {
     return cache.value;
   }
 
-  const [probe, wgPeer] = await Promise.all([probePublicIp(), readWgPeer()]);
+  const useNs = config.vpnMode === "torrentday-only";
+  const [probe, wgPeer] = await Promise.all([
+    useNs ? probePublicIpViaNs() : probePublicIp(),
+    readWgPeer(useNs),
+  ]);
+
+  const modeOut = config.vpnMode; // "vpn" | "torrentday-only"
 
   if (!probe.ok) {
     // Failure — return fresh failure, do NOT touch the cache.
     return {
-      mode: "vpn",
+      mode: modeOut,
       publicIp: null,
       country: null,
       wgPeer,
@@ -72,7 +95,7 @@ export async function getVpnHealth(forceRefresh = false): Promise<VpnHealth> {
     config.hostClearnetIp !== null && probe.publicIp === config.hostClearnetIp;
 
   const value: VpnHealth = {
-    mode: "vpn",
+    mode: modeOut,
     publicIp: probe.publicIp,
     country: probe.country,
     wgPeer,
@@ -88,6 +111,22 @@ type ProbeResult =
   | { ok: true; publicIp: string; country: string | null }
   | { ok: false };
 
+/** Parse Cloudflare's `cdn-cgi/trace` body — newline-separated key=value pairs.
+ *  Returns `{ ok: false }` when `ip=` is missing or empty. */
+function parseTraceBody(body: string): ProbeResult {
+  const kv = new Map<string, string>();
+  for (const line of body.split(/\r?\n/)) {
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    kv.set(line.slice(0, eq), line.slice(eq + 1));
+  }
+  const ip = kv.get("ip");
+  if (!ip || ip.length === 0) return { ok: false };
+  const loc = kv.get("loc");
+  const country = loc && loc.length > 0 ? loc.toUpperCase() : null;
+  return { ok: true, publicIp: ip, country };
+}
+
 async function probePublicIp(): Promise<ProbeResult> {
   try {
     const res = await fetch(PROBE_URL, {
@@ -95,21 +134,7 @@ async function probePublicIp(): Promise<ProbeResult> {
     });
     if (!res.ok) return { ok: false };
     const body = await res.text();
-    // Cloudflare trace format: newline-separated key=value pairs.
-    //   ip=205.185.199.30
-    //   loc=NL
-    // Parse into a small map, then pick the two fields we care about.
-    const kv = new Map<string, string>();
-    for (const line of body.split(/\r?\n/)) {
-      const eq = line.indexOf("=");
-      if (eq <= 0) continue;
-      kv.set(line.slice(0, eq), line.slice(eq + 1));
-    }
-    const ip = kv.get("ip");
-    if (!ip || ip.length === 0) return { ok: false };
-    const loc = kv.get("loc");
-    const country = loc && loc.length > 0 ? loc.toUpperCase() : null;
-    return { ok: true, publicIp: ip, country };
+    return parseTraceBody(body);
   } catch (err) {
     // Timeout / DNS / network — one warn line matches the codebase's existing
     // "log then move on" style. Do not include the URL in the log; the class
@@ -120,6 +145,78 @@ async function probePublicIp(): Promise<ProbeResult> {
 }
 
 /**
+ * Under `torrentday-only` mode, Fastify runs on the host — a direct `fetch()`
+ * would report the host's clearnet IP instead of the tunnel exit. Spawn
+ * `ns-fetcher.js` inside `castcrate-ns` and parse the same trace body from
+ * stdout.
+ */
+async function probePublicIpViaNs(): Promise<ProbeResult> {
+  return new Promise<ProbeResult>((resolveP) => {
+    const child = spawn(
+      IP_BIN,
+      ["netns", "exec", NS_NAME, NODE_BIN, NS_FETCHER_PATH, PROBE_URL],
+      {
+        env: {
+          PATH: "/usr/bin:/usr/sbin",
+          NS_TIMEOUT_MS: String(PROBE_TIMEOUT_MS),
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    const stdoutChunks: Buffer[] = [];
+    let stderrFirstLine = "";
+    let settled = false;
+    const done = (v: ProbeResult) => {
+      if (settled) return;
+      settled = true;
+      resolveP(v);
+    };
+
+    const outerTimer = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // ignore
+      }
+      console.warn("vpn-health: probe failed (subprocess hung)");
+      done({ ok: false });
+    }, PROBE_OUTER_TIMEOUT_MS);
+
+    child.on("error", (err) => {
+      clearTimeout(outerTimer);
+      console.warn(
+        `vpn-health: probe failed (spawn ${(err as Error).message})`,
+      );
+      done({ ok: false });
+    });
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutChunks.push(chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (!stderrFirstLine) {
+        const s = chunk.toString("utf8");
+        const nl = s.indexOf("\n");
+        stderrFirstLine = nl >= 0 ? s.slice(0, nl) : s;
+      }
+    });
+    child.on("close", (code) => {
+      clearTimeout(outerTimer);
+      if (code !== 0) {
+        console.warn(
+          `vpn-health: probe failed (subprocess exit=${code} ${stderrFirstLine})`,
+        );
+        done({ ok: false });
+        return;
+      }
+      const body = Buffer.concat(stdoutChunks).toString("utf8");
+      done(parseTraceBody(body));
+    });
+  });
+}
+
+/**
  * Best-effort read of `wg show wg-castcrate endpoints`. Returns the
  * `host:port` from the first non-empty line's second whitespace-delimited
  * field (`<pubkey>\t<host:port>`). Returns null on ENOENT (macOS dev), any
@@ -127,14 +224,27 @@ async function probePublicIp(): Promise<ProbeResult> {
  *
  * The peer host:port is the same information the user already has from their
  * VPN provider — safe to expose. The peer public key is NOT read or logged.
+ *
+ * When `useNs` is true (torrentday-only mode), the `wg` invocation is wrapped
+ * with `ip netns exec castcrate-ns` because Fastify is on the host but the
+ * WG interface lives inside the ns. Under `vpn` mode Fastify is inside the
+ * ns already; the direct `wg` invocation works.
  */
-function readWgPeer(): Promise<string | null> {
+function readWgPeer(useNs = false): Promise<string | null> {
   return new Promise((resolveP) => {
     let child;
     try {
-      child = spawn(WG_BIN, ["show", "wg-castcrate", "endpoints"], {
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      if (useNs) {
+        child = spawn(
+          IP_BIN,
+          ["netns", "exec", NS_NAME, WG_BIN, "show", "wg-castcrate", "endpoints"],
+          { stdio: ["ignore", "pipe", "pipe"] },
+        );
+      } else {
+        child = spawn(WG_BIN, ["show", "wg-castcrate", "endpoints"], {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      }
     } catch {
       resolveP(null);
       return;

@@ -2,7 +2,7 @@
 
 **Epic:** castcrate
 **Status:** 🟡 In Progress
-**Last Updated:** 2026-08-11 (added `vpn-split-tunnel` planned feature — 20 total)
+**Last Updated:** 2026-08-12 (vpn-split-tunnel v1 deployed + `vpn-torrentday-only` v2 planned + `watch-later` library feature planned — 22 total)
 
 > **This file is the epic marker.** Its presence in `docs/features/castcrate/` tells every Beast Mode command that this folder is an **epic**, not a plain feature. Castcrate is currently organised as a single umbrella epic containing every feature in the project — see Purpose for the rationale (and non-rationale) of that choice.
 
@@ -16,7 +16,7 @@ Castcrate is a self-hosted cast/stream box: metadata search → torrent discover
 
 ## Features
 
-The full set of features that make up castcrate. Grouped by theme for readability; the epic itself is flat (all 20 live directly under `docs/features/castcrate/`).
+The full set of features that make up castcrate. Grouped by theme for readability; the epic itself is flat (all 22 live directly under `docs/features/castcrate/`).
 
 | # | Feature | Status | Tasks | Description |
 |---|---------|--------|-------|-------------|
@@ -47,7 +47,10 @@ The full set of features that make up castcrate. Grouped by theme for readabilit
 | — | **Discovery (planned)** | | | |
 | 19 | tmdb-metadata | 🔵 Planned | — | Add TMDB as a metadata provider alongside OMDb (backdrops, better TV data, richer search) — inspired by Jellyfin |
 | — | **Platform (planned)** | | | |
-| 20 | vpn-split-tunnel | 🔵 Planned | — | Run the server inside a Linux netns with WireGuard as default egress + RFC1918 exception for LAN, so indexer/torrent traffic always goes over VPN while Chromecast keeps working. Adds `/health/vpn` + Settings panel; folds into `media-mac-deploy` as Phase 8. |
+| 20 | vpn-split-tunnel | 🟡 In Progress | 28/49 (57%) | v1: whole-server-in-netns with WG as default egress. Deployed 2026-08-12 on the 2011 MBP; egress split proven, /api/system/vpn-health green from LAN, TorrentDay search works without system-VPN toggle. Buffering during streaming is the known trade-off — v2 (row #21) addresses it. |
+| 21 | vpn-torrentday-only | 🔵 Planned | — | v2 of VPN routing: server runs on host clearnet (full peer throughput), only TorrentDay adapter fetches route through the WG tunnel via a per-fetch subprocess in the ns. Adds `VPN_MODE=torrentday-only` as a third mode; v1's `vpn` and `off` still work. Reuses v1's netns + WG infrastructure. |
+| — | **Library (planned)** | | | |
+| 22 | watch-later | 🔵 Planned | — | Queue + Library UX: add search results to a "Watch Later" queue, download in the background, browse completed downloads in a poster-grid Library view. Play/Cast from Library uses fully-local files — zero buffer, instant seek. Retention prune respects a per-item "pinned" flag. |
 
 > Reference any feature with `castcrate/<feature-name>` (e.g. `/proceed castcrate/stremio-addon-source`, `/continue-feature castcrate/hardening`). Bare names still resolve via fuzzy fallback (e.g. `/continue-feature discovery` → `castcrate/discovery`). Task counts are pulled from each feature's `tasks.md` and refreshed by `/update-epic`.
 

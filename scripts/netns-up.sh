@@ -2,19 +2,37 @@
 #
 # netns-up.sh — Idempotent setup of the castcrate-ns network namespace.
 #
-# Creates:
-#   - Linux network namespace: castcrate-ns
-#   - veth pair: veth-cc-host (host, 10.200.200.1/30) <-> veth-cc-ns (ns, 10.200.200.2/30)
-#   - WireGuard interface wg-castcrate inside the ns (config: /etc/castcrate/wg0.conf)
-#   - Four exception routes inside the ns (RFC1918 + multicast) via the veth
-#   - Default route inside the ns via wg-castcrate
-#   - Host iptables nat/PREROUTING DNAT rule republishing :3000 into the ns
+# Mode-aware. Branches on `VPN_MODE` (env, read near the top; passed to the
+# script by castcrate-netns.service via EnvironmentFile= — see the v2 deploy
+# runbook in docs/features/castcrate/media-mac-deploy/tasks.md Phase 8):
+#
+#   VPN_MODE=vpn (v1)             — full-tunnel. Configures:
+#     - namespace + IPv6 disable + loopback
+#     - veth pair (10.200.200.0/30) + address assignment
+#     - WireGuard interface + config + default route
+#     - RFC1918 + multicast exception routes via the veth (LAN reachable in ns)
+#     - net.ipv4.ip_forward=1 + host DNAT for :3000 into the ns
+#     - iptables FORWARD ACCEPT rules for the veth subnet
+#
+#   VPN_MODE=torrentday-only (v2) — split. Configures only:
+#     - namespace + IPv6 disable + loopback
+#     - WireGuard interface + config + default route
+#     - No veth / no DNAT / no FORWARD / no ip_forward — Fastify runs on the
+#       host, not inside the ns. The only ns processes are short-lived
+#       td-fetcher.js / ns-fetcher.js subprocesses spawned by Fastify, which
+#       only need WG egress (no LAN reachability from inside).
+#
+#   VPN_MODE=off (or unset)       — script refuses to run. systemd's
+#     ConditionPathExists=/etc/castcrate/wg0.conf on the unit is the primary
+#     guard; this is defence-in-depth for the case where wg0.conf is present
+#     but the user has flipped VPN_MODE=off without disabling the netns unit.
 #
 # All operations are guarded so a second invocation is a no-op.
 #
 # Requires: root, wireguard-tools, iproute2, iptables-nft.
 # Absolute paths only — no reliance on $PATH (systemd runs with a minimal one).
-# See docs/features/castcrate/vpn-split-tunnel/implementation.md Phase 1.
+# See docs/features/castcrate/vpn-split-tunnel/implementation.md Phase 1
+# and docs/features/castcrate/vpn-torrentday-only/implementation.md Phase 4.
 
 set -euo pipefail
 
@@ -61,12 +79,33 @@ if [ ! -r "$WG_CONF" ]; then
   die "WireGuard config missing or unreadable: $WG_CONF (drop your provider's wg0.conf there, mode 600, root:root)"
 fi
 
-# --- Detect LAN interface at runtime ----------------------------------------
-LAN_IF="$($IP route show default | awk '/default/ {print $5; exit}')"
-if [ -z "${LAN_IF:-}" ]; then
-  die "could not detect LAN interface from default route (is the box online?)"
+# --- Mode gate --------------------------------------------------------------
+# Read VPN_MODE from env (systemd EnvironmentFile= supplies it). Any value
+# other than 'vpn' or 'torrentday-only' is a hard error — the unit's
+# ConditionPathExists= should have kept us from running in that case, but be
+# loud if we got here anyway.
+VPN_MODE="${VPN_MODE:-off}"
+case "$VPN_MODE" in
+  vpn)             NEED_LAN_BRIDGE=1 ;;
+  torrentday-only) NEED_LAN_BRIDGE=0 ;;
+  *)
+    die "netns-up.sh should not run for VPN_MODE=$VPN_MODE (must be vpn|torrentday-only). \
+The systemd unit's ConditionPathExists=/etc/castcrate/wg0.conf is the primary guard; \
+if wg0.conf exists but VPN_MODE=off, either remove wg0.conf or disable castcrate-netns.service."
+    ;;
+esac
+log "VPN_MODE=$VPN_MODE NEED_LAN_BRIDGE=$NEED_LAN_BRIDGE"
+
+# --- Detect LAN interface at runtime (v1/full-tunnel only) -------------------
+# Only needed under NEED_LAN_BRIDGE=1 to build the host DNAT rule. In
+# torrentday-only mode Fastify runs on the host and no LAN-to-ns bridge exists.
+if [ "$NEED_LAN_BRIDGE" = 1 ]; then
+  LAN_IF="$($IP route show default | awk '/default/ {print $5; exit}')"
+  if [ -z "${LAN_IF:-}" ]; then
+    die "could not detect LAN interface from default route (is the box online?)"
+  fi
+  log "detected LAN interface: $LAN_IF"
 fi
-log "detected LAN interface: $LAN_IF"
 
 # --- Step 0: per-ns DNS resolver --------------------------------------------
 # Linux auto-bind-mounts /etc/netns/<ns>/resolv.conf over /etc/resolv.conf for
@@ -116,43 +155,60 @@ else
   $IP -n "$NS" link set lo up
 fi
 
-# --- Step 4: veth pair ------------------------------------------------------
-# The host end may exist from a previous run; the ns end lives inside the ns.
-if $IP link show "$VETH_HOST" &>/dev/null; then
-  log "veth pair already exists ($VETH_HOST on host) — skipping create"
-else
-  log "creating veth pair: $VETH_HOST <-> $VETH_NS"
-  $IP link add "$VETH_HOST" type veth peer name "$VETH_NS"
-fi
+# --- Step 4 + 5: veth pair + address assignment (v1/full-tunnel only) -------
+# In torrentday-only mode no LAN traffic ever enters the ns (Fastify is on the
+# host), so the veth pair is not needed. Skipping keeps the ns config minimal
+# and eliminates the DNAT + FORWARD surface entirely.
+if [ "$NEED_LAN_BRIDGE" = 1 ]; then
+  # --- Step 4: veth pair ----------------------------------------------------
+  # The host end may exist from a previous run; the ns end lives inside the ns.
+  if $IP link show "$VETH_HOST" &>/dev/null; then
+    log "veth pair already exists ($VETH_HOST on host) — skipping create"
+  else
+    log "creating veth pair: $VETH_HOST <-> $VETH_NS"
+    $IP link add "$VETH_HOST" type veth peer name "$VETH_NS"
+  fi
 
-# Move the ns-side veth into the ns if it's still on the host.
-if $IP link show "$VETH_NS" &>/dev/null; then
-  log "moving $VETH_NS into $NS"
-  $IP link set "$VETH_NS" netns "$NS"
-elif $IP -n "$NS" link show "$VETH_NS" &>/dev/null; then
-  log "$VETH_NS already inside $NS — skipping move"
-else
-  die "$VETH_NS is neither on host nor in $NS (corrupted state — run netns-down.sh)"
-fi
+  # Move the ns-side veth into the ns if it's still on the host.
+  if $IP link show "$VETH_NS" &>/dev/null; then
+    log "moving $VETH_NS into $NS"
+    $IP link set "$VETH_NS" netns "$NS"
+  elif $IP -n "$NS" link show "$VETH_NS" &>/dev/null; then
+    log "$VETH_NS already inside $NS — skipping move"
+  else
+    die "$VETH_NS is neither on host nor in $NS (corrupted state — run netns-down.sh)"
+  fi
 
-# --- Step 5: address assignment on the veth ---------------------------------
-if $IP addr show dev "$VETH_HOST" | grep -q "inet ${HOST_ADDR%/*}/"; then
-  log "$VETH_HOST already has $HOST_ADDR — skipping"
-else
-  log "assigning $HOST_ADDR to $VETH_HOST"
-  $IP addr add "$HOST_ADDR" dev "$VETH_HOST"
-fi
+  # --- Step 5: address assignment on the veth -------------------------------
+  if $IP addr show dev "$VETH_HOST" | grep -q "inet ${HOST_ADDR%/*}/"; then
+    log "$VETH_HOST already has $HOST_ADDR — skipping"
+  else
+    log "assigning $HOST_ADDR to $VETH_HOST"
+    $IP addr add "$HOST_ADDR" dev "$VETH_HOST"
+  fi
 
-if $IP -n "$NS" addr show dev "$VETH_NS" | grep -q "inet ${NS_ADDR%/*}/"; then
-  log "$VETH_NS already has $NS_ADDR — skipping"
-else
-  log "assigning $NS_ADDR to $VETH_NS"
-  $IP -n "$NS" addr add "$NS_ADDR" dev "$VETH_NS"
-fi
+  if $IP -n "$NS" addr show dev "$VETH_NS" | grep -q "inet ${NS_ADDR%/*}/"; then
+    log "$VETH_NS already has $NS_ADDR — skipping"
+  else
+    log "assigning $NS_ADDR to $VETH_NS"
+    $IP -n "$NS" addr add "$NS_ADDR" dev "$VETH_NS"
+  fi
 
-log "bringing veth pair up"
-$IP link set "$VETH_HOST" up
-$IP -n "$NS" link set "$VETH_NS" up
+  log "bringing veth pair up"
+  $IP link set "$VETH_HOST" up
+  $IP -n "$NS" link set "$VETH_NS" up
+else
+  # R4 stale-state guard: if we're in torrentday-only mode but a veth from a
+  # previous v1-mode run is still lying around, that's a mode-swap that didn't
+  # tear down cleanly. Refuse to proceed rather than leaving stale infra + a
+  # DNAT rule pointing at a Fastify that's no longer inside the ns.
+  if $IP link show "$VETH_HOST" &>/dev/null; then
+    die "stale $VETH_HOST veth from a previous VPN_MODE=vpn run detected. \
+Run /opt/castcrate/scripts/netns-down.sh first (or systemctl stop castcrate-netns) \
+before starting under VPN_MODE=torrentday-only."
+  fi
+  log "torrentday-only: skipping veth pair + address assignment (no LAN bridge needed)"
+fi
 
 # --- Step 6: WireGuard interface --------------------------------------------
 # Create the WG interface on the host, then move it into the ns. This is the
@@ -221,9 +277,15 @@ log "bringing $WG_IF up"
 $IP -n "$NS" link set "$WG_IF" up
 
 # --- Step 8: routing inside the ns ------------------------------------------
-# Exception routes are more specific than `default`; kernel prefers longest
-# match, so LAN + multicast destinations take the veth, everything else takes
-# wg-castcrate.
+# The default route via wg-castcrate is required in BOTH modes — it's how any
+# in-ns process reaches the internet through the tunnel.
+#
+# The RFC1918 + multicast exception routes are ONLY needed in v1 (full-tunnel)
+# mode, where the ns hosts Fastify and Fastify needs to reach LAN destinations
+# (Chromecast mDNS, torrent-peer local connections, etc.). In torrentday-only
+# mode the only ns process is the short-lived td-fetcher/ns-fetcher, which
+# only ever talks to external hosts (torrentday.com, 1.1.1.1). Adding the
+# exception routes here would be harmless but adds noise; skip for clarity.
 add_route_if_missing() {
   local prefix="$1"
   local via_or_dev="$2"
@@ -236,53 +298,71 @@ add_route_if_missing() {
   fi
 }
 
-add_route_if_missing "10.0.0.0/8"      "via $HOST_GW dev $VETH_NS"
-add_route_if_missing "172.16.0.0/12"   "via $HOST_GW dev $VETH_NS"
-add_route_if_missing "192.168.0.0/16"  "via $HOST_GW dev $VETH_NS"
-add_route_if_missing "224.0.0.0/4"     "via $HOST_GW dev $VETH_NS"
+if [ "$NEED_LAN_BRIDGE" = 1 ]; then
+  add_route_if_missing "10.0.0.0/8"      "via $HOST_GW dev $VETH_NS"
+  add_route_if_missing "172.16.0.0/12"   "via $HOST_GW dev $VETH_NS"
+  add_route_if_missing "192.168.0.0/16"  "via $HOST_GW dev $VETH_NS"
+  add_route_if_missing "224.0.0.0/4"     "via $HOST_GW dev $VETH_NS"
+fi
 add_route_if_missing "default"         "dev $WG_IF"
 
-# --- Step 9: host IPv4 forwarding ------------------------------------------
-# Required because our DNAT below rewrites the destination to 10.200.200.2,
-# which is on a different interface (veth-cc-host) than the ingress LAN_IF.
-# The kernel treats cross-interface delivery as forwarding — needs ip_forward.
-# (Original design assumed conntrack alone would suffice — it does not for
-# DNAT that crosses interfaces. Verified on Ubuntu 26.04 on 2026-08-12.)
-#
-# Idempotent: sysctl -w is safe to call every boot. We do NOT save + restore
-# the previous value in netns-down — enabling ip_forward is a benign,
-# system-wide setting that other services often need too, and toggling it
-# back to 0 on teardown risks breaking whatever else came to depend on it.
-log "enabling net.ipv4.ip_forward=1 (required for DNAT across interfaces)"
-$SYSCTL -q -w net.ipv4.ip_forward=1
+# --- Steps 9-11: DNAT / FORWARD / ip_forward (v1/full-tunnel only) ----------
+# All three are needed only when LAN clients connect to Fastify inside the ns:
+#   - ip_forward: kernel forwarding for DNAT across the veth interface
+#   - DNAT: republishes <LAN_IF>:3000 -> 10.200.200.2:3000
+#   - FORWARD ACCEPT: allows DNAT'd packets past ufw's default DROP
+# In torrentday-only mode Fastify runs on the host, so LAN clients hit it
+# directly — none of this bridging is needed.
+if [ "$NEED_LAN_BRIDGE" = 1 ]; then
+  # --- Step 9: host IPv4 forwarding -----------------------------------------
+  # Required because our DNAT below rewrites the destination to 10.200.200.2,
+  # which is on a different interface (veth-cc-host) than the ingress LAN_IF.
+  # The kernel treats cross-interface delivery as forwarding — needs ip_forward.
+  # (Original design assumed conntrack alone would suffice — it does not for
+  # DNAT that crosses interfaces. Verified on Ubuntu 26.04 on 2026-08-12.)
+  #
+  # Idempotent: sysctl -w is safe to call every boot. We do NOT save + restore
+  # the previous value in netns-down — enabling ip_forward is a benign,
+  # system-wide setting that other services often need too, and toggling it
+  # back to 0 on teardown risks breaking whatever else came to depend on it.
+  log "enabling net.ipv4.ip_forward=1 (required for DNAT across interfaces)"
+  $SYSCTL -q -w net.ipv4.ip_forward=1
 
-# --- Step 10: host DNAT rule ------------------------------------------------
-# Republishes <LAN_IF>:3000 -> 10.200.200.2:3000 so LAN clients still reach
-# the server despite it running inside the ns.
-if $IPTABLES -t nat -C PREROUTING -i "$LAN_IF" -p tcp --dport "$DNAT_PORT" \
-    -j DNAT --to-destination "$DNAT_TARGET" 2>/dev/null; then
-  log "DNAT rule already present on $LAN_IF:$DNAT_PORT — skipping"
+  # --- Step 10: host DNAT rule ----------------------------------------------
+  # Republishes <LAN_IF>:3000 -> 10.200.200.2:3000 so LAN clients still reach
+  # the server despite it running inside the ns.
+  if $IPTABLES -t nat -C PREROUTING -i "$LAN_IF" -p tcp --dport "$DNAT_PORT" \
+      -j DNAT --to-destination "$DNAT_TARGET" 2>/dev/null; then
+    log "DNAT rule already present on $LAN_IF:$DNAT_PORT — skipping"
+  else
+    log "adding DNAT rule: $LAN_IF:$DNAT_PORT -> $DNAT_TARGET"
+    $IPTABLES -t nat -A PREROUTING -i "$LAN_IF" -p tcp --dport "$DNAT_PORT" \
+      -j DNAT --to-destination "$DNAT_TARGET"
+  fi
+
+  # --- Step 11: FORWARD chain allow rules for the veth subnet ---------------
+  # ufw defaults to DROP on the FORWARD chain. DNAT'd packets crossing from
+  # LAN_IF to veth-cc-host would be dropped without explicit allows. Two rules:
+  # one for inbound-to-ns, one for the return path.
+  for dir in "-d" "-s"; do
+    if $IPTABLES -C FORWARD "$dir" "$VETH_SUBNET" -j ACCEPT 2>/dev/null; then
+      log "FORWARD $dir $VETH_SUBNET ACCEPT rule already present — skipping"
+    else
+      log "adding FORWARD $dir $VETH_SUBNET -j ACCEPT"
+      # -I at position 1 so we sit AHEAD of ufw's own FORWARD chains (which
+      # would otherwise DROP before we got a chance to ACCEPT).
+      $IPTABLES -I FORWARD 1 "$dir" "$VETH_SUBNET" -j ACCEPT
+    fi
+  done
 else
-  log "adding DNAT rule: $LAN_IF:$DNAT_PORT -> $DNAT_TARGET"
-  $IPTABLES -t nat -A PREROUTING -i "$LAN_IF" -p tcp --dport "$DNAT_PORT" \
-    -j DNAT --to-destination "$DNAT_TARGET"
+  log "torrentday-only: skipping ip_forward + DNAT + FORWARD rules (no LAN bridge)"
 fi
 
-# --- Step 11: FORWARD chain allow rules for the veth subnet -----------------
-# ufw defaults to DROP on the FORWARD chain. DNAT'd packets crossing from
-# LAN_IF to veth-cc-host would be dropped without explicit allows. Two rules:
-# one for inbound-to-ns, one for the return path.
-for dir in "-d" "-s"; do
-  if $IPTABLES -C FORWARD "$dir" "$VETH_SUBNET" -j ACCEPT 2>/dev/null; then
-    log "FORWARD $dir $VETH_SUBNET ACCEPT rule already present — skipping"
-  else
-    log "adding FORWARD $dir $VETH_SUBNET -j ACCEPT"
-    # -I at position 1 so we sit AHEAD of ufw's own FORWARD chains (which
-    # would otherwise DROP before we got a chance to ACCEPT).
-    $IPTABLES -I FORWARD 1 "$dir" "$VETH_SUBNET" -j ACCEPT
-  fi
-done
-
-log "castcrate-ns is up. verify with:"
-log "  $IP netns exec $NS curl -s https://1.1.1.1/cdn-cgi/trace  # -> VPN exit IP + loc"
-log "  curl -s https://1.1.1.1/cdn-cgi/trace                     # -> host clearnet IP + loc"
+log "castcrate-ns is up (VPN_MODE=$VPN_MODE). verify with:"
+if [ "$NEED_LAN_BRIDGE" = 1 ]; then
+  log "  $IP netns exec $NS curl -s https://1.1.1.1/cdn-cgi/trace  # -> VPN exit IP + loc"
+  log "  curl -s https://1.1.1.1/cdn-cgi/trace                     # -> host clearnet IP + loc"
+else
+  log "  $IP netns exec $NS /usr/bin/node /opt/castcrate/scripts/ns-fetcher.js https://1.1.1.1/cdn-cgi/trace  # -> VPN exit IP + loc"
+  log "  curl -s https://1.1.1.1/cdn-cgi/trace                                                                 # -> host clearnet IP + loc"
+fi

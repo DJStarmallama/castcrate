@@ -179,19 +179,36 @@ export interface OpenSubtitlesSubtitleTrack {
   downloadCount?: number;
 }
 
-/** VPN routing mode surfaced by the server. `"off"` = default (macOS dev or
- *  `VPN_MODE=off`); `"vpn"` = Fastify is running inside `castcrate-ns` with
- *  outbound egress routed through WireGuard; `"unknown"` = reserved for
- *  in-flight first-probe states (not currently emitted by v1). */
-export type VpnMode = "vpn" | "off" | "unknown";
+/** VPN routing mode surfaced by the server.
+ *
+ *  - `"off"` — default; macOS dev or explicit `VPN_MODE=off`. Fastify runs on
+ *    the host and no netns is configured. No probe issued; `/api/system/vpn-health`
+ *    short-circuits to a static `mode:"off"` response.
+ *  - `"vpn"` — full-tunnel (v1). Fastify runs INSIDE `castcrate-ns`; all
+ *    outbound egress (indexers, torrent peers, metadata, subtitles, DHT)
+ *    exits via the WireGuard tunnel.
+ *  - `"torrentday-only"` — split (v2). Fastify runs on the host at full
+ *    throughput; only the TorrentDay adapter's HTTP fetches are spawned into
+ *    the ns via `ip netns exec castcrate-ns node td-fetcher.js <url>`.
+ *    Everything else (WebTorrent peers, other indexers, subtitles, cast) uses
+ *    host clearnet.
+ *  - `"unknown"` — reserved for in-flight first-probe states; not currently
+ *    emitted by any mode. */
+export type VpnMode = "vpn" | "torrentday-only" | "off" | "unknown";
 
 /** Health snapshot returned by `GET /api/system/vpn-health`. Cached server-side
  *  for 30s; `?refresh=1` bypasses. See `vpn-split-tunnel` feature for shape
  *  rationale (Decision D2). */
 export interface VpnHealth {
+  /** Where the probe was sourced from — describes the probe path, not where
+   *  Fastify runs. Under `"vpn"` mode Fastify itself is inside the ns and the
+   *  probe uses direct fetch. Under `"torrentday-only"` mode Fastify runs on
+   *  the host but the probe is spawned into the ns via `ns-fetcher.js`, so
+   *  `publicIp` still reports the WG tunnel's exit IP. */
   mode: VpnMode;
-  /** Public IP observed from inside the ns via ifconfig.co. null when the
-   *  probe is skipped (`mode==="off"`), still pending, or has failed. */
+  /** Public IP observed from the probe (Cloudflare `1.1.1.1/cdn-cgi/trace`).
+   *  null when the probe is skipped (`mode==="off"`), still pending, or has
+   *  failed. */
   publicIp: string | null;
   /** ISO 3166-1 alpha-2 country code from the lookup, uppercase. null when
    *  the probe is skipped or the lookup did not return one. */

@@ -33,7 +33,11 @@ export function VpnStatusPill({ onOpenSettings }: Props) {
       dotCls = "bg-emerald-500";
       label = `VPN · ${h.country ?? "??"}`;
       ariaState = `healthy, exit country ${h.country ?? "unknown"}`;
-    } else if (h.mode === "vpn" && !h.reachable) {
+    } else if (h.mode === "torrentday-only" && h.reachable) {
+      dotCls = "bg-emerald-500";
+      label = `TD-only · ${h.country ?? "??"}`;
+      ariaState = `TorrentDay-only, exit country ${h.country ?? "unknown"}`;
+    } else if ((h.mode === "vpn" || h.mode === "torrentday-only") && !h.reachable) {
       dotCls = "bg-amber-500";
       label = "?";
       ariaState = "unreachable";
@@ -41,6 +45,10 @@ export function VpnStatusPill({ onOpenSettings }: Props) {
       dotCls = "bg-zinc-500";
       label = "OFF";
       ariaState = "off";
+    } else if (h.mode === "unknown") {
+      dotCls = "bg-zinc-500";
+      label = "?";
+      ariaState = "unknown";
     }
   }
 

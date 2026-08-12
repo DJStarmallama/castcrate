@@ -34,6 +34,12 @@ Type=oneshot
 # Keep the unit "active" between start and stop so dependent units see a
 # stable state (netns-up ran successfully; the ns is present).
 RemainAfterExit=yes
+# netns-up.sh reads VPN_MODE (vpn | torrentday-only) to decide whether to
+# build the veth pair + DNAT + FORWARD chain (v1 full-tunnel) or skip them
+# (v2 selective). EnvironmentFile= supplies it. MUST be the same .env
+# castcrate.service reads, so both units agree on the mode — otherwise the
+# netns builds for one mode and Fastify runs in another.
+EnvironmentFile=/home/castcrate/castcrate/apps/server/.env
 ExecStart=/opt/castcrate/scripts/netns-up.sh
 ExecStop=/opt/castcrate/scripts/netns-down.sh
 # NO sandbox flags on this unit — netns-up.sh needs CAP_NET_ADMIN, iptables,

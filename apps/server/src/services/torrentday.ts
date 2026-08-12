@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { LRUCache } from "lru-cache";
 import { load } from "cheerio";
 import type { TorrentResult } from "@castcrate/shared";
-import type { Dispatcher, RequestInit as UndiciRequestInit } from "undici";
 import {
   formatBytes,
   isCastFriendly,
@@ -13,24 +12,18 @@ import { getDispatcher } from "../lib/proxy.js";
 import { getSettings } from "./settings.js";
 import { episodeMatchesTitle } from "./knaben.js";
 import type { IndexerAdapter } from "../lib/indexers.js";
+import { fetchTdHtml, fetchTdBytes } from "./torrentday-fetch.js";
+import {
+  TorrentDayAuthError,
+  TorrentDayDisabledError,
+} from "./torrentday-errors.js";
+
+// Re-export for backward compatibility with existing callers.
+export { TorrentDayAuthError, TorrentDayDisabledError };
 
 export interface TorrentDayResult extends TorrentResult {
   source: "torrentday";
   torrentUrl: string;
-}
-
-export class TorrentDayAuthError extends Error {
-  constructor(message = "TorrentDay auth failed — refresh cookies") {
-    super(message);
-    this.name = "TorrentDayAuthError";
-  }
-}
-
-export class TorrentDayDisabledError extends Error {
-  constructor(message = "TorrentDay is disabled or credentials are not configured") {
-    super(message);
-    this.name = "TorrentDayDisabledError";
-  }
 }
 
 const TD_BASE = "https://www.torrentday.com";
@@ -38,9 +31,6 @@ const TD_BASE = "https://www.torrentday.com";
 // Category params — empty values filter to category on TD's search.
 const MOVIE_CATS = "&96=&11=&5=&48=&44=&21=";
 const TV_CATS = "&104=&32=&7=&34=&26=";
-
-const UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
 const cache = new LRUCache<string, TorrentDayResult[]>({
   max: 200,
@@ -83,54 +73,22 @@ function cookieHash(uid: string, pass: string): string {
   return createHash("sha1").update(uid + pass).digest("hex").slice(0, 8);
 }
 
-function buildHeaders(uid: string, pass: string): Record<string, string> {
-  return {
-    Cookie: `uid=${uid}; pass=${pass}`,
-    "User-Agent": UA,
-    Accept: "text/html,application/xhtml+xml",
-  };
-}
-
 async function fetchSearchHtml(
   query: string,
   cats: string,
   uid: string,
   pass: string,
-  dispatcher: Dispatcher | undefined,
+  dispatcher: import("undici").Dispatcher | undefined,
 ): Promise<string> {
   const via = dispatcher ? "proxy" : "direct";
   // Never log uid or pass.
   console.info(`torrentday: search "${query}" via=${via}`);
 
   const url = `${TD_BASE}/t?q=${encodeURIComponent(query)}${cats}`;
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      headers: buildHeaders(uid, pass),
-      signal: AbortSignal.timeout(15_000),
-      redirect: "manual",
-      dispatcher,
-    } as UndiciRequestInit as unknown as RequestInit);
-  } catch (err) {
-    throw new Error(`TorrentDay fetch failed: ${(err as Error).message}`);
-  }
-
-  // 3xx with Location pointing to login → auth error.
-  if (res.status >= 300 && res.status < 400) {
-    const location = res.headers.get("location") ?? "";
-    if (location.includes("login")) {
-      console.warn("torrentday: auth failed — refresh cookies");
-      throw new TorrentDayAuthError();
-    }
-    throw new Error(`TorrentDay unexpected redirect to ${location}`);
-  }
-
-  if (!res.ok) {
-    throw new Error(`TorrentDay HTTP ${res.status}`);
-  }
-
-  return res.text();
+  // fetchTdHtml branches on config.vpnMode:
+  //   - vpn / off → direct fetch (byte-identical to the pre-v2 codepath)
+  //   - torrentday-only → spawn ip netns exec castcrate-ns node td-fetcher.js
+  return fetchTdHtml(url, uid, pass, dispatcher);
 }
 
 function parseSize(text: string): number {
@@ -261,23 +219,10 @@ export async function fetchTorrentBlob(torrentUrl: string): Promise<Buffer> {
 
   const safeUrl = encodeURI(torrentUrl);
 
-  let res: Response;
-  try {
-    res = await fetch(safeUrl, {
-      headers: buildHeaders(uid, pass),
-      signal: AbortSignal.timeout(15_000),
-      dispatcher,
-    } as UndiciRequestInit as unknown as RequestInit);
-  } catch (err) {
-    throw new Error(`TorrentDay blob fetch failed: ${(err as Error).message}`);
-  }
-
-  if (!res.ok) {
-    throw new Error(`TorrentDay blob HTTP ${res.status}`);
-  }
-
-  const ab = await res.arrayBuffer();
-  const buf = Buffer.from(ab);
+  // fetchTdBytes branches on config.vpnMode (see torrentday-fetch.ts). Binary
+  // safety is preserved across both codepaths (Buffer end-to-end, no utf8
+  // decode in the pipeline).
+  const buf = await fetchTdBytes(safeUrl, uid, pass, dispatcher);
 
   // Validate bencode dict magic byte — 'd' (0x64).
   if (buf.length <= 100 || buf[0] !== 0x64) {

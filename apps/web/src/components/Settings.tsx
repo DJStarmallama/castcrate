@@ -1033,7 +1033,11 @@ function VpnBadge({ health }: { health: VpnHealth }) {
     label = "VPN";
     cls = "border-emerald-700/50 bg-emerald-900/40 text-emerald-300";
     ariaState = "healthy";
-  } else if (mode === "vpn" && !reachable) {
+  } else if (mode === "torrentday-only" && reachable) {
+    label = "TD-ONLY";
+    cls = "border-emerald-700/50 bg-emerald-900/40 text-emerald-300";
+    ariaState = "healthy, torrentday-only";
+  } else if ((mode === "vpn" || mode === "torrentday-only") && !reachable) {
     label = "UNREACHABLE";
     cls = "border-amber-700/50 bg-amber-900/40 text-amber-300";
     ariaState = "unreachable";
@@ -1120,10 +1124,27 @@ function VpnSection() {
             Peer: <code className="text-zinc-500">{h.wgPeer ?? "—"}</code>
           </p>
 
+          {h.mode === "vpn" && (
+            <p className="mt-3 text-xs text-zinc-500">
+              Full-tunnel: all outbound traffic routes via VPN. Best for privacy;
+              costs peer throughput. Set <code>VPN_MODE</code> in <code>.env</code>{" "}
+              and restart the server to change modes.
+            </p>
+          )}
+          {h.mode === "torrentday-only" && (
+            <p className="mt-3 text-xs text-zinc-500">
+              TorrentDay searches route via VPN; peer downloads and everything else
+              run on clearnet. Best for throughput; TorrentDay site access still
+              works. Set <code>VPN_MODE</code> in <code>.env</code> and restart the
+              server to change modes.
+            </p>
+          )}
           {h.mode === "off" && (
             <p className="mt-3 text-xs text-zinc-500">
-              VPN routing disabled. Set <code>VPN_MODE=vpn</code> and provide{" "}
-              <code>/etc/castcrate/wg0.conf</code> to enable.
+              No VPN routing. TorrentDay searches will return empty from this
+              network. Set <code>VPN_MODE=vpn</code> (full-tunnel) or{" "}
+              <code>VPN_MODE=torrentday-only</code> (selective) in <code>.env</code>{" "}
+              and provide <code>/etc/castcrate/wg0.conf</code> to enable.
             </p>
           )}
 
