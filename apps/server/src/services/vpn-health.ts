@@ -3,9 +3,14 @@ import type { VpnHealth } from "@castcrate/shared";
 import { config } from "../lib/config.js";
 
 /** URL of the public-IP lookup. Called from inside the netns; naturally exits
- *  via the WG tunnel. Fixed 3s timeout. */
-const IFCONFIG_URL = "https://ifconfig.co/json";
-const IFCONFIG_TIMEOUT_MS = 3_000;
+ *  via the WG tunnel. Fixed 3s timeout.
+ *
+ *  Cloudflare's cdn-cgi/trace endpoint returns plain-text key=value lines
+ *  and does NOT rate-limit VPN exit IPs (unlike ifconfig.co, which silently
+ *  drops requests from certain commercial-VPN ranges — verified live against
+ *  IPVanish's Amsterdam exit on 2026-08-12). */
+const PROBE_URL = "https://1.1.1.1/cdn-cgi/trace";
+const PROBE_TIMEOUT_MS = 3_000;
 /** Absolute path — matches what systemd sees. On macOS dev the binary is
  *  absent and `spawn` will ENOENT; we catch that below and return `null`. */
 const WG_BIN = "/usr/bin/wg";
@@ -85,19 +90,26 @@ type ProbeResult =
 
 async function probePublicIp(): Promise<ProbeResult> {
   try {
-    const res = await fetch(IFCONFIG_URL, {
-      signal: AbortSignal.timeout(IFCONFIG_TIMEOUT_MS),
+    const res = await fetch(PROBE_URL, {
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     if (!res.ok) return { ok: false };
-    const body = (await res.json()) as { ip?: unknown; country_iso?: unknown };
-    if (typeof body.ip !== "string" || body.ip.length === 0) {
-      return { ok: false };
+    const body = await res.text();
+    // Cloudflare trace format: newline-separated key=value pairs.
+    //   ip=205.185.199.30
+    //   loc=NL
+    // Parse into a small map, then pick the two fields we care about.
+    const kv = new Map<string, string>();
+    for (const line of body.split(/\r?\n/)) {
+      const eq = line.indexOf("=");
+      if (eq <= 0) continue;
+      kv.set(line.slice(0, eq), line.slice(eq + 1));
     }
-    const country =
-      typeof body.country_iso === "string" && body.country_iso.length > 0
-        ? body.country_iso.toUpperCase()
-        : null;
-    return { ok: true, publicIp: body.ip, country };
+    const ip = kv.get("ip");
+    if (!ip || ip.length === 0) return { ok: false };
+    const loc = kv.get("loc");
+    const country = loc && loc.length > 0 ? loc.toUpperCase() : null;
+    return { ok: true, publicIp: ip, country };
   } catch (err) {
     // Timeout / DNS / network — one warn line matches the codebase's existing
     // "log then move on" style. Do not include the URL in the log; the class

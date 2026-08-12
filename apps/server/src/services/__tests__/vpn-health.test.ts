@@ -37,10 +37,26 @@ beforeEach(() => {
   (config as { hostClearnetIp: string | null }).hostClearnetIp = null;
 });
 
-function mockFetchOk(body: unknown) {
+/** Build a Cloudflare trace-format text body from ip + optional loc. */
+function traceBody(ip: string, loc?: string): string {
+  const lines = [
+    "fl=abc123",
+    "h=1.1.1.1",
+    `ip=${ip}`,
+    "ts=1700000000.000",
+    "visit_scheme=https",
+    "uag=node",
+    "colo=AMS",
+    "http=http/2",
+  ];
+  if (loc) lines.push(`loc=${loc}`);
+  return lines.join("\n") + "\n";
+}
+
+function mockFetchOk(body: string) {
   fetchMock.mockResolvedValue({
     ok: true,
-    json: async () => body,
+    text: async () => body,
   } as unknown as Response);
 }
 
@@ -48,7 +64,7 @@ describe("vpn-health — probe cases", () => {
   it("mode=vpn, non-leaking response → reachable + leaking:false + uppercased country", async () => {
     (config as { vpnMode: "vpn" | "off" | "unknown" }).vpnMode = "vpn";
     (config as { hostClearnetIp: string | null }).hostClearnetIp = "5.6.7.8";
-    mockFetchOk({ ip: "1.2.3.4", country_iso: "de" });
+    mockFetchOk(traceBody("1.2.3.4", "de"));
 
     const h = await getVpnHealth();
 
@@ -64,7 +80,7 @@ describe("vpn-health — probe cases", () => {
   it("mode=vpn, publicIp matches hostClearnetIp → leaking:true", async () => {
     (config as { vpnMode: "vpn" | "off" | "unknown" }).vpnMode = "vpn";
     (config as { hostClearnetIp: string | null }).hostClearnetIp = "5.6.7.8";
-    mockFetchOk({ ip: "5.6.7.8", country_iso: "us" });
+    mockFetchOk(traceBody("5.6.7.8", "us"));
 
     const h = await getVpnHealth();
 
@@ -114,7 +130,7 @@ describe("vpn-health — caching", () => {
   it("second call within TTL hits cache; forceRefresh bypasses", async () => {
     (config as { vpnMode: "vpn" | "off" | "unknown" }).vpnMode = "vpn";
     (config as { hostClearnetIp: string | null }).hostClearnetIp = "5.6.7.8";
-    mockFetchOk({ ip: "1.2.3.4", country_iso: "de" });
+    mockFetchOk(traceBody("1.2.3.4", "de"));
 
     await getVpnHealth();
     await getVpnHealth();
