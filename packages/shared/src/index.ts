@@ -178,3 +178,129 @@ export interface OpenSubtitlesSubtitleTrack {
    *  for sorting in the picker. */
   downloadCount?: number;
 }
+
+/** VPN routing mode surfaced by the server.
+ *
+ *  - `"off"` — default; macOS dev or explicit `VPN_MODE=off`. Fastify runs on
+ *    the host and no netns is configured. No probe issued; `/api/system/vpn-health`
+ *    short-circuits to a static `mode:"off"` response.
+ *  - `"vpn"` — full-tunnel (v1). Fastify runs INSIDE `castcrate-ns`; all
+ *    outbound egress (indexers, torrent peers, metadata, subtitles, DHT)
+ *    exits via the WireGuard tunnel.
+ *  - `"torrentday-only"` — split (v2). Fastify runs on the host at full
+ *    throughput; only the TorrentDay adapter's HTTP fetches are spawned into
+ *    the ns via `ip netns exec castcrate-ns node td-fetcher.js <url>`.
+ *    Everything else (WebTorrent peers, other indexers, subtitles, cast) uses
+ *    host clearnet.
+ *  - `"unknown"` — reserved for in-flight first-probe states; not currently
+ *    emitted by any mode. */
+export type VpnMode = "vpn" | "torrentday-only" | "off" | "unknown";
+
+/** Health snapshot returned by `GET /api/system/vpn-health`. Cached server-side
+ *  for 30s; `?refresh=1` bypasses. See `vpn-split-tunnel` feature for shape
+ *  rationale (Decision D2). */
+export interface VpnHealth {
+  /** Where the probe was sourced from — describes the probe path, not where
+   *  Fastify runs. Under `"vpn"` mode Fastify itself is inside the ns and the
+   *  probe uses direct fetch. Under `"torrentday-only"` mode Fastify runs on
+   *  the host but the probe is spawned into the ns via `ns-fetcher.js`, so
+   *  `publicIp` still reports the WG tunnel's exit IP. */
+  mode: VpnMode;
+  /** Public IP observed from the probe (Cloudflare `1.1.1.1/cdn-cgi/trace`).
+   *  null when the probe is skipped (`mode==="off"`), still pending, or has
+   *  failed. */
+  publicIp: string | null;
+  /** ISO 3166-1 alpha-2 country code from the lookup, uppercase. null when
+   *  the probe is skipped or the lookup did not return one. */
+  country: string | null;
+  /** WG peer endpoint `host:port` from `wg show wg-castcrate endpoints`.
+   *  null when `wg` is not present (macOS dev), the peer has no active
+   *  endpoint, or the probe was skipped. */
+  wgPeer: string | null;
+  /** True when the last outbound probe returned a 2xx within the timeout. */
+  reachable: boolean;
+  /** True when `publicIp === HOST_CLEARNET_IP` — i.e. the tunnel is up but
+   *  not rewriting egress (leak). Always false when `mode==="off"` and when
+   *  `HOST_CLEARNET_IP` is unset (no baseline to compare against). */
+  leaking: boolean;
+  /** Unix ms of the last successful probe. null if never succeeded (or
+   *  `mode==="off"` — the off short-circuit does not touch the timestamp). */
+  lastCheckedAt: number | null;
+}
+
+// -----------------------------------------------------------------------------
+// watch-later feature — queue + library types
+// -----------------------------------------------------------------------------
+
+export type LibraryStatus = "queued" | "downloading" | "completed";
+
+/** One row of ~/.castcrate/library.json.
+ *  `hash` is null while a magnet is still being resolved (fetch-metadata phase);
+ *  `filePath` is null until the download completes; `completedAt` is null
+ *  until the same moment. `pinned` is orthogonal to state and controls
+ *  retention-prune eligibility only. */
+export interface LibraryItem {
+  /** Client-stable id. Generated server-side on add — `crypto.randomUUID()`.
+   *  Independent of `hash` so we can reference an item even before metadata
+   *  resolves. */
+  id: string;
+  /** Magnet URI. Present for magnet-added items; absent when the item came
+   *  from a .torrent blob (rare — TorrentDay). */
+  magnet: string | null;
+  /** WebTorrent infoHash (lowercase). Null until metadata resolves. Once
+   *  set, becomes the dedupe key. */
+  hash: string | null;
+  /** Snapshot of metadata at add-time, so display works even if OMDB/TMDB
+   *  is down when the user opens Library. */
+  title: string;
+  year: number | null;
+  poster: string | null;
+  imdbId: string | null;
+  /** Which torrent source produced this — mirrors TorrentResult.source. */
+  source: "yts" | "eztv" | "knaben" | "torrentday" | "stremio" | "unknown";
+  /** ISO 8601 add time. */
+  addedAt: string;
+  /** ISO 8601 completion time; null while queued/downloading. */
+  completedAt: string | null;
+  /** Path (relative to DOWNLOAD_PATH) to the picked video file inside the
+   *  torrent. Null until completion. Written by the download-queue worker. */
+  filePath: string | null;
+  /** Retention-prune exclusion flag. Inviolable — a pinned entry's file
+   *  MUST NOT be deleted by castcrate-prune.service. */
+  pinned: boolean;
+}
+
+/** Wire shape returned by `GET /api/library`. Sections are pre-sorted
+ *  add-date desc so the client renders straight from the payload. */
+export interface LibraryListResponse {
+  queued: LibraryItem[]; // completedAt === null && hash === null
+  downloading: LibraryItem[]; // completedAt === null && hash !== null
+  completed: LibraryItem[]; // completedAt !== null
+}
+
+/** POST /api/library/queue request. Metadata is captured at add-time
+ *  from whichever search source produced the row — the queue never
+ *  re-fetches. */
+export interface AddToQueueRequest {
+  magnet: string;
+  metadata: {
+    title: string;
+    year: number | null;
+    poster: string | null;
+    imdbId: string | null;
+    source: LibraryItem["source"];
+  };
+}
+
+export interface AddToQueueResponse {
+  id: string;
+  alreadyPresent: boolean;
+}
+
+/** POST /api/library/:id/play response — the client uses `streamUrl`
+ *  to redirect straight to the player. `hash` is exposed for cast + status
+ *  polling consistency with the existing torrent surface. */
+export interface LibraryPlayResponse {
+  streamUrl: string;
+  hash: string;
+}

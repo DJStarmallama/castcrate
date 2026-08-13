@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import type { VpnMode } from "@castcrate/shared";
 
 function expandTilde(p: string): string {
   if (p.startsWith("~/") || p === "~") {
@@ -24,6 +25,35 @@ export const config = {
   /** Optional SOCKS5/HTTP proxy URL loaded from env. Used as the default value
    *  for `proxyUrl` in runtime settings when no persisted value exists. */
   proxyUrl: process.env.PROXY_URL ?? null,
+  /** Override for `getLanIp()`. When set (non-empty), skips `os.networkInterfaces()`
+   *  auto-detect and returns this value directly. Needed for netns'd deploys
+   *  (vpn-split-tunnel) where inside the ns only `lo` + `veth-cc-ns` are visible
+   *  and auto-detect would return `10.200.200.2` — unreachable from LAN and
+   *  breaking Chromecast stream URL construction. Leave unset on macOS dev. */
+  castcrateLanIp: process.env.CASTCRATE_LAN_IP ?? null,
+  /** VPN routing mode. Accepts three literal values; anything else — including
+   *  unset — collapses to `"off"` (macOS dev / opt-out).
+   *
+   *  - `"vpn"` — full-tunnel (v1, `vpn-split-tunnel`): Fastify runs inside
+   *    `castcrate-ns`; all outbound egress via WG.
+   *  - `"torrentday-only"` — split (v2, `vpn-torrentday-only`): Fastify on host
+   *    for full peer throughput; only TorrentDay HTTP fetches are spawned into
+   *    the ns via `ip netns exec castcrate-ns node td-fetcher.js <url>`.
+   *  - `"off"` — no VPN routing; short-circuits `/api/system/vpn-health`.
+   *
+   *  The parser matches exact literals only — no aliases (no `"td-only"`,
+   *  no case-insensitive match). Value must appear verbatim in the env. */
+  vpnMode: ((): VpnMode => {
+    const raw = process.env.VPN_MODE ?? "off";
+    return raw === "vpn" || raw === "torrentday-only" ? raw : "off";
+  })(),
+  /** Host's clearnet public IP captured BEFORE enabling the netns. Used by
+   *  `/api/system/vpn-health` to detect leaks (`publicIp === hostClearnetIp`
+   *  → `leaking: true`). Env-only in v1 per Decision D5 — the runbook
+   *  instructs the user to `curl ifconfig.co/ip` and paste the result.
+   *  When null, leak detection is disabled (returns `leaking: false`) rather
+   *  than false-positive. */
+  hostClearnetIp: process.env.HOST_CLEARNET_IP ?? null,
   /** OpenSubtitles REST API v1 key. Free tier available at
    *  https://www.opensubtitles.com/en/consumers. When unset the OpenSubtitles
    *  fallback is disabled (subtitle discovery returns torrent-embedded only). */
@@ -34,4 +64,9 @@ export const config = {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
+  /** Max concurrent background downloads spawned by the Watch Later queue.
+   *  Kept low by default because the 2011 MBP deploy box has 8 GB RAM and
+   *  shares WebTorrent capacity with any active cast-now stream. Increase if
+   *  the box gains headroom. See watch-later feature — Key Decisions #3. */
+  maxConcurrentQueued: Number(process.env.MAX_CONCURRENT_QUEUED ?? 2),
 };

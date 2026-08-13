@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MovieDetails, TorrentResult } from "@castcrate/shared";
 import { api } from "../lib/api";
 import { formatBytes } from "../lib/format";
@@ -17,7 +17,34 @@ interface Props {
 export function TorrentPicker({ movie, onClose, onPick }: Props) {
   const [showAll, setShowAll] = useState(false);
   const [instantOnly, setInstantOnly] = useLocalState(INSTANT_ONLY_KEY, false);
+  const [toast, setToast] = useState<string | null>(null);
+  const qc = useQueryClient();
   useEscape(onClose);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 3000);
+    return () => window.clearTimeout(t);
+  }, [toast]);
+
+  const addToQueue = useMutation({
+    mutationFn: (t: TorrentResult) =>
+      api.libraryAdd({
+        magnet: t.magnet,
+        metadata: {
+          title: movie.title,
+          year: movie.year,
+          poster: movie.poster,
+          imdbId: movie.imdbId,
+          source: t.source,
+        },
+      }),
+    onSuccess: (res) => {
+      setToast(res.alreadyPresent ? "Already in Library" : "Added to Watch Later");
+      qc.invalidateQueries({ queryKey: ["library"] });
+    },
+    onError: (err: Error) => setToast(`Failed: ${err.message}`),
+  });
 
   const q = useQuery({
     queryKey: ["torrents", movie.title, movie.year, movie.imdbId],
@@ -107,10 +134,20 @@ export function TorrentPicker({ movie, onClose, onPick }: Props) {
                 showAll={showAll}
                 onShowAll={() => setShowAll(true)}
                 onPick={onPick}
+                onQueue={(t) => addToQueue.mutate(t)}
+                queuingMagnet={addToQueue.isPending ? addToQueue.variables?.magnet ?? null : null}
               />
             </>
           )}
         </div>
+        {toast && (
+          <div
+            role="status"
+            className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-zinc-700 bg-zinc-900/95 px-4 py-2 text-xs text-zinc-100 shadow-lg"
+          >
+            {toast}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -121,19 +158,30 @@ function TorrentList({
   showAll,
   onShowAll,
   onPick,
+  onQueue,
+  queuingMagnet,
 }: {
   results: TorrentResult[];
   showAll: boolean;
   onShowAll: () => void;
   onPick: (t: TorrentResult) => void;
+  onQueue: (t: TorrentResult) => void;
+  queuingMagnet: string | null;
 }) {
   const top = results[0]!;
   const rest = results.slice(1);
   return (
     <div className="space-y-3">
-      <TorrentRow torrent={top} highlight onPick={() => onPick(top)} />
+      <TorrentRow
+        torrent={top}
+        highlight
+        onPick={() => onPick(top)}
+        onQueue={() => onQueue(top)}
+        queuing={queuingMagnet === top.magnet}
+      />
       {!showAll && rest.length > 0 && (
         <button
+          type="button"
           onClick={onShowAll}
           className="text-sm text-zinc-400 underline-offset-4 hover:text-zinc-200 hover:underline"
         >
@@ -141,7 +189,13 @@ function TorrentList({
         </button>
       )}
       {showAll && rest.map((t, i) => (
-        <TorrentRow key={`${t.magnet}-${i}`} torrent={t} onPick={() => onPick(t)} />
+        <TorrentRow
+          key={`${t.magnet}-${i}`}
+          torrent={t}
+          onPick={() => onPick(t)}
+          onQueue={() => onQueue(t)}
+          queuing={queuingMagnet === t.magnet}
+        />
       ))}
     </div>
   );
@@ -151,10 +205,14 @@ function TorrentRow({
   torrent,
   highlight,
   onPick,
+  onQueue,
+  queuing,
 }: {
   torrent: TorrentResult;
   highlight?: boolean;
   onPick: () => void;
+  onQueue: () => void;
+  queuing: boolean;
 }) {
   const isStremio = torrent.source === "stremio";
   const isInstant = isStremio && Boolean(torrent.streamUrl);
@@ -162,10 +220,19 @@ function TorrentRow({
   const swarmText = isStremio
     ? `via ${torrent.addonOrigin ?? "Stremio"} · seeds unknown`
     : `${torrent.seeds} seeds · ${torrent.peers} peers`;
+  // v1: Watch Later requires a magnet. TorrentDay uses a .torrent blob;
+  // Stremio HTTP streams have no magnet either. Disable with tooltip.
+  const canQueue = Boolean(torrent.magnet) && torrent.source !== "torrentday" && !torrent.streamUrl;
+  const queueTitle = canQueue
+    ? "Download in the background; play from disk later"
+    : torrent.source === "torrentday"
+      ? "TorrentDay results aren't supported yet (no magnet URI)"
+      : torrent.streamUrl
+        ? "Instant streams can't be added to Watch Later"
+        : "This source has no magnet URI";
   return (
-    <button
-      onClick={onPick}
-      className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition ${
+    <div
+      className={`flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left transition ${
         isInstant
           ? "border-amber-500/40 bg-amber-950/10 hover:border-amber-400/60"
           : highlight
@@ -173,33 +240,53 @@ function TorrentRow({
             : "border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 hover:bg-zinc-900"
       }`}
     >
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-medium">{torrent.resolution} · {torrent.videoCodec}</span>
-          {isInstant && (
-            <span
-              className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300"
-              title="Real-Debrid cached — plays instantly, no peer wait"
-            >
-              ⚡ Instant
-            </span>
-          )}
-        </div>
-        <div className="text-xs text-zinc-500">
-          {sizeText} · {swarmText}
-        </div>
-      </div>
-      <span
-        className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
-          isInstant
-            ? "bg-amber-500 text-black"
-            : highlight
-              ? "bg-emerald-500 text-black"
-              : "bg-zinc-800 text-zinc-300"
-        }`}
+      <button
+        type="button"
+        onClick={onPick}
+        className="flex min-w-0 flex-1 items-center justify-between text-left"
       >
-        Cast
-      </span>
-    </button>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{torrent.resolution} · {torrent.videoCodec}</span>
+            {isInstant && (
+              <span
+                className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300"
+                title="Real-Debrid cached — plays instantly, no peer wait"
+              >
+                ⚡ Instant
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-zinc-500">
+            {sizeText} · {swarmText}
+          </div>
+        </div>
+      </button>
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onQueue}
+          disabled={!canQueue || queuing}
+          title={queueTitle}
+          aria-label="Add to Watch Later"
+          className="rounded-full border border-zinc-700 bg-zinc-900/80 px-3 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {queuing ? "Adding…" : "+ Watch Later"}
+        </button>
+        <button
+          type="button"
+          onClick={onPick}
+          className={`rounded-full px-3 py-1 text-xs font-medium ${
+            isInstant
+              ? "bg-amber-500 text-black"
+              : highlight
+                ? "bg-emerald-500 text-black"
+                : "bg-zinc-800 text-zinc-300"
+          }`}
+        >
+          Cast
+        </button>
+      </div>
+    </div>
   );
 }

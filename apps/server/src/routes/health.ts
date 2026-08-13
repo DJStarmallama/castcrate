@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import { config } from "../lib/config.js";
 import { checkFfmpeg } from "../services/transcoder.js";
@@ -6,6 +7,7 @@ import {
   updateSettings,
   type RuntimeSettings,
 } from "../services/settings.js";
+import { getVpnHealth } from "../services/vpn-health.js";
 import { maskStremioUrl } from "./stremio.js";
 
 export async function healthRoutes(app: FastifyInstance) {
@@ -35,6 +37,17 @@ export async function healthRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get<{ Querystring: { refresh?: string } }>(
+    "/api/system/vpn-health",
+    async (req) => {
+      // Any truthy `?refresh=...` bypasses the 30s cache. No auth — matches
+      // `/api/system/check` (both are read-only status endpoints).
+      const q = req.query.refresh;
+      const forceRefresh = q !== undefined && q !== "" && q !== "0" && q !== "false";
+      return getVpnHealth(forceRefresh);
+    },
+  );
+
   app.get("/api/settings", async () => {
     const s = getSettings();
     // Mask sensitive credentials — server-internal values only.
@@ -51,6 +64,11 @@ export async function healthRoutes(app: FastifyInstance) {
         ...a,
         url: maskStremioUrl(a.url),
       })),
+      // VPN surface — presence-only. Never returns WG keys, endpoint, or the
+      // config file contents. `vpnConfigured` is a boot-time-cheap `existsSync`
+      // call; no in-memory cache needed per Phase 4 spec.
+      vpnMode: config.vpnMode,
+      vpnConfigured: existsSync("/etc/castcrate/wg0.conf"),
     };
   });
 

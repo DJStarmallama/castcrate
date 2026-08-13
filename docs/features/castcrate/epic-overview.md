@@ -2,7 +2,7 @@
 
 **Epic:** castcrate
 **Status:** 🟡 In Progress
-**Last Updated:** 2026-08-08 (deploy runbook complete — 2 features complete)
+**Last Updated:** 2026-08-13 (v2 + watch-later deployed to box; endpoint verifications green, browser + throughput verification pending user session)
 
 > **This file is the epic marker.** Its presence in `docs/features/castcrate/` tells every Beast Mode command that this folder is an **epic**, not a plain feature. Castcrate is currently organised as a single umbrella epic containing every feature in the project — see Purpose for the rationale (and non-rationale) of that choice.
 
@@ -16,7 +16,7 @@ Castcrate is a self-hosted cast/stream box: metadata search → torrent discover
 
 ## Features
 
-The full set of features that make up castcrate. Grouped by theme for readability; the epic itself is flat (all 17 live directly under `docs/features/castcrate/`).
+The full set of features that make up castcrate. Grouped by theme for readability; the epic itself is flat (all 23 live directly under `docs/features/castcrate/`).
 
 | # | Feature | Status | Tasks | Description |
 |---|---------|--------|-------|-------------|
@@ -46,6 +46,13 @@ The full set of features that make up castcrate. Grouped by theme for readabilit
 | 18 | media-mac-deploy | 🟢 Complete | 47/47 (100%) | Runbook — deploy CastCrate onto the dedicated 2011 MBP media box (Ubuntu 26.04). ✅ Casting Interstellar to Master Llama end-to-end, retention timer scheduled, auto-start on boot proven. |
 | — | **Discovery (planned)** | | | |
 | 19 | tmdb-metadata | 🔵 Planned | — | Add TMDB as a metadata provider alongside OMDb (backdrops, better TV data, richer search) — inspired by Jellyfin |
+| — | **Platform (planned)** | | | |
+| 20 | vpn-split-tunnel | 🟡 In Progress | 28/49 (57%) | v1: whole-server-in-netns with WG as default egress. Deployed 2026-08-12 on the 2011 MBP; egress split proven, /api/system/vpn-health green from LAN, TorrentDay search works without system-VPN toggle. Buffering during streaming is the known trade-off — v2 (row #21) addresses it. |
+| 21 | vpn-torrentday-only | 🟡 In Progress | — | v2 of VPN routing: server runs on host clearnet (full peer throughput), only TorrentDay adapter fetches route through the WG tunnel via a per-fetch subprocess in the ns. Adds `VPN_MODE=torrentday-only` as a third mode; v1's `vpn` and `off` still work. Reuses v1's netns + WG infrastructure. **Deployed 2026-08-13**: `castcrate-netns.service` + `castcrate.service` both active in torrentday-only mode; `/api/system/vpn-health` returns green from LAN (`publicIp: 205.185.199.30`, `country: NL`, `reachable: true`, `leaking: false`). Browser tests (nav pill, TD search, cast, throughput measurement) pending user session. |
+| — | **Library (planned)** | | | |
+| 22 | watch-later | 🟡 In Progress | — | Queue + Library UX: add search results to a "Watch Later" queue, download in the background, browse completed downloads in a poster-grid Library view. Play/Cast from Library uses fully-local files — zero buffer, instant seek. Retention prune respects a per-item "pinned" flag. **Code deployed to box 2026-08-13** (routes, service, download-queue, pin-aware `prune-downloads.sh`, UI); end-to-end product-value test (queue → download → play from Library → pin + prune) pending user session. |
+| — | **UX (planned)** | | | |
+| 23 | tv-mode | 🔵 Planned | — | 10-foot UI skin for the existing web app: `?tv=1` toggles poster-grid + Netflix-style rails + focus-nav for arrow keys + OK + Back. Runs on Google TV's built-in Chrome (no native app, no Cast Receiver). Landing view = Library so browsing pre-downloaded content is one remote click away. Pairs with `watch-later`. |
 
 > Reference any feature with `castcrate/<feature-name>` (e.g. `/proceed castcrate/stremio-addon-source`, `/continue-feature castcrate/hardening`). Bare names still resolve via fuzzy fallback (e.g. `/continue-feature discovery` → `castcrate/discovery`). Task counts are pulled from each feature's `tasks.md` and refreshed by `/update-epic`.
 
@@ -62,6 +69,7 @@ Most features are already in progress or complete and were built independently b
 5. **chromecast / cast-controls** — final output to the TV.
 6. **media-mac-deploy** — one-off runbook to deploy the epic onto dedicated hardware; runs independent of code progress and can be executed once code is casting cleanly.
 7. **tmdb-metadata** — additive metadata provider improvement; can be planned/built any time after the current player-buffer-ux fix pass, no hard dependency on the deploy.
+8. **vpn-split-tunnel** — deploy-layer feature; builds on `media-mac-deploy` (adds Phase 8) and unblocks `torrentday-indexer` (no more remember-to-VPN toggle). Independent of the metadata / player fix pass.
 
 **Dependencies between features:**
 - Torrent sources (8–11) all feed into `proxy-routing` (12).

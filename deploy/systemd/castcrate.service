@@ -1,0 +1,78 @@
+# castcrate.service — CastCrate Fastify server (running inside castcrate-ns)
+#
+# Canonical install location:
+#   /etc/systemd/system/castcrate.service
+#
+# This is the repo-tracked source of truth. Deploy with:
+#   sudo cp deploy/systemd/*.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl restart castcrate.service
+#
+# What it does:
+#   Runs the compiled Fastify server (dist/index.js) inside the castcrate-ns
+#   network namespace, so all outbound traffic exits via the WireGuard tunnel
+#   provisioned by castcrate-netns.service. LAN reachability is preserved via
+#   the veth pair + host iptables DNAT rule set up in netns-up.sh.
+#
+# IMPORTANT — no tildes anywhere.
+#   systemd's EnvironmentFile= does NOT expand `~`. A .env line like
+#     DOWNLOAD_PATH=~/foo
+#   resolves through the app's expandTilde() to `<cwd>/~/foo` — outside
+#   ReadWritePaths=, blocked by ProtectHome=read-only, and errors are swallowed
+#   as "network problems". This is the media-mac-deploy "Bug B" footgun.
+#   Every path in this unit and in the referenced .env MUST be absolute.
+#
+# Feature docs:
+#   docs/features/castcrate/vpn-split-tunnel/implementation.md
+#   docs/features/castcrate/vpn-split-tunnel/context.md
+
+[Unit]
+Description=CastCrate Fastify server
+After=network-online.target castcrate-netns.service
+# Wants= (not Requires=) on the netns unit: when VPN_MODE=off (or wg0.conf
+# is missing and castcrate-netns.service is a ConditionPathExists= no-op),
+# Fastify still starts, running on the host directly. See run-server.sh for
+# the VPN_MODE gate.
+Wants=network-online.target castcrate-netns.service
+
+[Service]
+Type=simple
+User=castcrate
+EnvironmentFile=/home/castcrate/castcrate/apps/server/.env
+# ExecStart delegates to run-server.sh, which reads VPN_MODE and either
+# `exec ip netns exec castcrate-ns node …` (VPN_MODE=vpn) or `exec node …`
+# on the host (VPN_MODE=off). The ns entry is decided in the script, not here,
+# so this unit ships identically in both configurations.
+ExecStart=/opt/castcrate/scripts/run-server.sh
+Restart=on-failure
+
+# --- Sandboxing (preserved verbatim from the currently-deployed unit) --------
+# NoNewPrivileges is DISABLED (=no) because we need the process to keep the
+# ambient CAP_SYS_ADMIN + CAP_NET_ADMIN required by `ip netns exec setns()`
+# below. Once `run-server.sh` execs `ip netns exec castcrate-ns node …`, node
+# itself does NOT need these caps for its own work — but the setns() at
+# process entry does. CapabilityBoundingSet= below hard-limits the process to
+# exactly those two caps and nothing else, matching the security intent of
+# NoNewPrivileges.
+NoNewPrivileges=no
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/castcrate/castcrate-downloads
+# systemd creates /var/lib/castcrate at 0700 owned by the service user and
+# adds it to ReadWritePaths= automatically. Insurance for future VPN health
+# caching (Phase 4) and any other small writable-state need.
+StateDirectory=castcrate
+
+# --- Capabilities (needed for `ip netns exec` at process entry) --------------
+# setns(CLONE_NEWNET) requires CAP_SYS_ADMIN in the caller's user namespace.
+# We grant both CAP_SYS_ADMIN + CAP_NET_ADMIN as ambient (inherited by child
+# processes) so `ip netns exec castcrate-ns node …` works when the unit runs
+# as User=castcrate. CapabilityBoundingSet= then caps the maximum privilege
+# the process (and its children) can ever hold to exactly these two — so
+# node running with these caps can enter the ns and touch its interfaces, but
+# can't (say) mount filesystems, load modules, or bind low ports on the host.
+AmbientCapabilities=CAP_SYS_ADMIN CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target
