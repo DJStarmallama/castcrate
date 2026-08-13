@@ -1,7 +1,7 @@
 # CastCrate - Master Overview
 
-**Last Updated:** 2026-08-12
-**Version:** v1.6
+**Last Updated:** 2026-08-13
+**Version:** v1.7
 
 ## Project Summary
 
@@ -24,6 +24,7 @@ All product features currently live inside the **castcrate** umbrella epic (`doc
 
 ## Changelog
 
+- v1.7 (2026-08-13): **v2 (`vpn-torrentday-only`) + `watch-later` deployed to the 2011 MBP box.** `git pull` + `pnpm build` + copy scripts to `/opt/castcrate/scripts/` + copy updated systemd units + flip `.env` to `VPN_MODE=torrentday-only` + `systemctl restart castcrate-netns.service castcrate.service`. Verified from Mac: `curl /api/system/vpn-health` returns `{mode:"torrentday-only", publicIp:"205.185.199.30", country:"NL", reachable:true, leaking:false}` — proves the `ns-fetcher.js` subprocess-in-ns probe pattern works end-to-end and Fastify is running on the host (not in the ns) as designed. Deploy also surfaced two small gotchas addressed inline: (1) `EnvironmentFile=` needed on `castcrate-netns.service` so `netns-up.sh` sees `VPN_MODE`; (2) frontend `libraryPlay` flow needed a `startTorrent()` re-attach call to match the backend's pure `/:id/play` route contract (Decision D3 in `watch-later/context.md`). Browser tests (nav pill label, TorrentDay search, Watch Later add + Library UI, cast, peer throughput comparison, kill-switch, reboot survival) pending user session — infra is proven, product-value verification is the last mile.
 - v1.6 (2026-08-12): **`tv-mode` planned as feature #23.** 10-foot UI skin for the existing web app — `?tv=1` toggles poster-grid + Netflix-style rails + focus-nav for the Chromecast remote's arrow keys / OK / Back. Runs on Google TV's built-in Chrome (Master Llama already has it) — no native app, no Cast Receiver App ID, no store distribution. Landing view = Library so pre-downloaded content is one remote click from playback. Pairs with `watch-later` for the full "browse the Library from the couch" UX. Zero backend changes; ~2-3 days of frontend work.
 - v1.5 (2026-08-12): **vpn-split-tunnel v1 shipped to the 2011 MBP box + two follow-up features planned.** v1 live on box: WG tunnel handshaking to IPVanish Amsterdam, `/api/system/vpn-health` green from LAN, TorrentDay search works without any system-VPN toggle. Deploy surfaced a few gotchas patched in-flight (AppArmor wg-quick profile → bypass with in-script `strip`; missing `ip_forward` for cross-interface DNAT → `sysctl -w` baked into `netns-up.sh`; ufw FORWARD chain DROP → two ACCEPT rules added; per-ns `/etc/resolv.conf` needed for DNS; ifconfig.co blocks VPN exits → switched health probe to Cloudflare's `1.1.1.1/cdn-cgi/trace`). **Known trade-off**: full-tunnel routing tanks torrent peer throughput → **`vpn-torrentday-only` v2 planned** (row #21): server on host clearnet, only TorrentDay adapter fetches via subprocess-in-ns. **`watch-later` library feature planned** (row #22): queue downloads, browse completed items in a Library view, cast from local disk with zero buffering — pairs beautifully with v2 for a full Plex-quality torrent UX.
 - v1.4 (2026-08-11): **Added `vpn-split-tunnel` planned feature.** Netns + WireGuard sketch so indexer/torrent traffic always egresses via VPN while LAN-facing `:3000` (Chromecast, browsers) keeps working on the host interface. Motivated by TorrentDay's 0-results-without-VPN behaviour and the annoyance of remembering to flip a system VPN on/off. Requirements + implementation skeleton only; slots into `media-mac-deploy` as Phase 8 when picked up. Epic now 20 features.
